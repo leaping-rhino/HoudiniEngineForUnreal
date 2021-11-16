@@ -193,7 +193,11 @@ FUnrealGeometryCollectionTranslator::UploadGeometryCollection(UGeometryCollectio
 	TManagedArray<FVector>& TangentU = GeometryCollection->TangentU;
 	TManagedArray<FVector>& TangentV = GeometryCollection->TangentV;
 	TManagedArray<FVector>& Normal = GeometryCollection->Normal;
+#if INCLUDE_CHAOS
+	TManagedArray<TArray<FVector2D>>& UVLayers = GeometryCollection->UVs;
+#else
 	TManagedArray<FVector2D>& UV = GeometryCollection->UV;
+#endif
 	TManagedArray<FLinearColor>& Color = GeometryCollection->Color;
 	TManagedArray<int32>& BoneMap = GeometryCollection->BoneMap;
 	TManagedArray<FLinearColor>& BoneColor = GeometryCollection->BoneColor;
@@ -338,7 +342,7 @@ FUnrealGeometryCollectionTranslator::UploadGeometryCollection(UGeometryCollectio
 		// Setup for vertex instance attributes
 		int32 HoudiniVertexIdx = 0;
 
-		const bool HasUVs = UV.Num() == Vertex.Num();
+		const bool HasUVs = UVLayers.Num() > 0 && UVLayers[0].Num() == Vertex.Num();
 		TArray<float> UVs;
 
 		if (HasUVs)
@@ -397,8 +401,8 @@ FUnrealGeometryCollectionTranslator::UploadGeometryCollection(UGeometryCollectio
 				//--------------------------------------------------------------------------------------------------------------------- 
 				if (HasUVs)
 				{
-					UVs[Float3Index + 0] = UV[VertexIndex].X;
-					UVs[Float3Index + 1] = 1 - UV[VertexIndex].Y;
+					UVs[Float3Index + 0] = UVLayers[0][VertexIndex].X;
+					UVs[Float3Index + 1] = 1 - UVLayers[0][VertexIndex].Y;
 					UVs[Float3Index + 2] = 0;
 				}
 				

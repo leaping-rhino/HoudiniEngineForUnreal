@@ -948,7 +948,11 @@ void FHoudiniGeometryCollectionTranslator::AppendStaticMesh(
 		TManagedArray<FVector>& TangentU = GeometryCollection->TangentU;
 		TManagedArray<FVector>& TangentV = GeometryCollection->TangentV;
 		TManagedArray<FVector>& Normal = GeometryCollection->Normal;
+#if INCLUDE_CHAOS
+		TManagedArray<TArray<FVector2D>>& UVs = GeometryCollection->UVs;
+#else
 		TManagedArray<FVector2D>& UV = GeometryCollection->UV;
+#endif
 		TManagedArray<FLinearColor>& Color = GeometryCollection->Color;
 		TManagedArray<int32>& BoneMap = GeometryCollection->BoneMap;
 		TManagedArray<FLinearColor>& BoneColor = GeometryCollection->BoneColor;
@@ -969,7 +973,18 @@ void FHoudiniGeometryCollectionTranslator::AppendStaticMesh(
 			Normal[VertexOffset] = VertexBuffer.StaticMeshVertexBuffer.VertexTangentZ(VertexIndex);
 
 			// @todo : Support multiple UV's per vertex based on MAX_STATIC_TEXCOORDS
+#if INCLUDE_CHAOS
+			const int32 NumUVLayers = VertexBuffer.StaticMeshVertexBuffer.GetNumTexCoords();
+			for (int32 UVLayerIndex = 0; UVLayerIndex < NumUVLayers; ++UVLayerIndex)
+			{
+				if (UVLayerIndex >= UVs.Num())
+					break;
+
+				UVs[UVLayerIndex][VertexOffset] = VertexBuffer.StaticMeshVertexBuffer.GetVertexUV(VertexIndex, UVLayerIndex);
+			}
+#else
 			UV[VertexOffset] = VertexBuffer.StaticMeshVertexBuffer.GetVertexUV(VertexIndex, 0);
+#endif
 			if (VertexBuffer.ColorVertexBuffer.GetNumVertices() == VertexCount)
 				Color[VertexOffset] = VertexBuffer.ColorVertexBuffer.VertexColor(VertexIndex);
 			// Houdini plugin: Vertex colors seem to not be added properly for Houdini generated materials with textures. 

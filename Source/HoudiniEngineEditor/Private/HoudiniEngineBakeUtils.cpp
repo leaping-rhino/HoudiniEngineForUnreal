@@ -5157,7 +5157,11 @@ void FHoudiniEngineBakeUtils::CopyPropertyToNewGeometryCollectionActorAndCompone
 	NewGCC->ClusterGroupIndex = InGCC->ClusterGroupIndex;
 	NewGCC->MaxClusterLevel = InGCC->MaxClusterLevel;
 	NewGCC->DamageThreshold = InGCC->DamageThreshold; // May need to disable for 4.26 ?
+#if INCLUDE_CHAOS
+	NewGCC->ClusterConnectionType_DEPRECATED = InGCC->ClusterConnectionType_DEPRECATED;
+#else
 	NewGCC->ClusterConnectionType = InGCC->ClusterConnectionType;
+#endif
 	NewGCC->CollisionGroup = InGCC->CollisionGroup;
 	NewGCC->CollisionSampleFraction = InGCC->CollisionSampleFraction;
 	NewGCC->InitialVelocityType = InGCC->InitialVelocityType;
