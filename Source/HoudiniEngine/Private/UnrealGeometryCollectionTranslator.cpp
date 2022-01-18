@@ -875,7 +875,7 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 	
 	// Collisions - Collision Type
 	{
-		TArray< int32 > AttributeData { (int32)GeometryCollectionObject->CollisionType };
+		TArray< int32 > AttributeData { (int32)GeometryCollectionObject->CollisionType_DEPRECATED };
 		
 		HAPI_AttributeInfo AttributeInfo;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
@@ -901,13 +901,13 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 	// Collisions - Implicit Type
 	{
 		int32 ImplicitTypeValue;
-		if (GeometryCollectionObject->ImplicitType == EImplicitTypeEnum::Chaos_Implicit_None)
+		if (GeometryCollectionObject->ImplicitType_DEPRECATED == EImplicitTypeEnum::Chaos_Implicit_None)
 		{
 			ImplicitTypeValue = 0;
 		}
 		else
 		{
-			ImplicitTypeValue = static_cast<int32>(GeometryCollectionObject->ImplicitType) + 1; // + 1 because 0 = None.
+			ImplicitTypeValue = static_cast<int32>(GeometryCollectionObject->ImplicitType_DEPRECATED) + 1; // + 1 because 0 = None.
 		}
 		
 		TArray< int32 > AttributeData { ImplicitTypeValue};
@@ -935,7 +935,7 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 
 	// Collisions - Min Level Set Resolution
 	{
-		TArray< int32 > AttributeData {static_cast<int32>(GeometryCollectionObject->MinLevelSetResolution) };
+		TArray< int32 > AttributeData {static_cast<int32>(GeometryCollectionObject->MinLevelSetResolution_DEPRECATED) };
 		
 		HAPI_AttributeInfo AttributeInfo;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
@@ -960,7 +960,7 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 
 	// Collisions - Max Level Set Resolution
 	{
-		TArray< int32 > AttributeData { static_cast<int32>(GeometryCollectionObject->MaxLevelSetResolution) };
+		TArray< int32 > AttributeData { static_cast<int32>(GeometryCollectionObject->MaxLevelSetResolution_DEPRECATED) };
 		
 		HAPI_AttributeInfo AttributeInfo;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
@@ -983,7 +983,7 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 	
 	// Collisions - Min cluster level set resolution
 	{
-		TArray< int32 > AttributeData { static_cast<int32>(GeometryCollectionObject->MinClusterLevelSetResolution) };
+		TArray< int32 > AttributeData { static_cast<int32>(GeometryCollectionObject->MinClusterLevelSetResolution_DEPRECATED) };
 		
 		HAPI_AttributeInfo AttributeInfo;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
@@ -1008,7 +1008,7 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 
 	// Collisions - Max cluster level set resolution
 	{
-		TArray< int32 > AttributeData { static_cast<int32>(GeometryCollectionObject->MaxClusterLevelSetResolution) };
+		TArray< int32 > AttributeData { static_cast<int32>(GeometryCollectionObject->MaxClusterLevelSetResolution_DEPRECATED) };
 		
 		HAPI_AttributeInfo AttributeInfo;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
@@ -1033,7 +1033,7 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 
 	// Collisions - Object reduction percentage
 	{
-		TArray< float > AttributeData { GeometryCollectionObject->CollisionObjectReductionPercentage };
+		TArray< float > AttributeData { GeometryCollectionObject->CollisionObjectReductionPercentage_DEPRECATED };
 		
 		HAPI_AttributeInfo AttributeInfo;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
@@ -1127,7 +1127,7 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 
 	// Collisions - Collision particles fraction
 	{
-		TArray< float > AttributeData {GeometryCollectionObject->CollisionParticlesFraction };
+		TArray< float > AttributeData {GeometryCollectionObject->CollisionParticlesFraction_DEPRECATED };
 		
 		HAPI_AttributeInfo AttributeInfo;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
@@ -1152,7 +1152,7 @@ bool FUnrealGeometryCollectionTranslator::AddGeometryCollectionDetailAttributes(
 
 	// Collisions - Maximum collision particles
 	{
-		TArray< int32 > AttributeData { GeometryCollectionObject->MaximumCollisionParticles };
+		TArray< int32 > AttributeData { GeometryCollectionObject->MaximumCollisionParticles_DEPRECATED };
 		
 		HAPI_AttributeInfo AttributeInfo;
 		FHoudiniApi::AttributeInfo_Init(&AttributeInfo);

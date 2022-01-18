@@ -688,7 +688,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 				if (Result < (int32)ECollisionTypeEnum::Chaos_Max)
 				{
 					ECollisionTypeEnum CollisionType = (ECollisionTypeEnum)Result;
-					GeometryCollection->CollisionType = CollisionType;
+					GeometryCollection->CollisionType_DEPRECATED = CollisionType;
 				}
 			}
 		}
@@ -719,7 +719,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 					ImplicitType = (EImplicitTypeEnum)(Result - 1);
 				}
 				
-				GeometryCollection->ImplicitType = ImplicitType;
+				GeometryCollection->ImplicitType_DEPRECATED = ImplicitType;
 			}
 		}
 	}
@@ -742,7 +742,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 		{
 			if (IntData.Num() > 0)
 			{
-				GeometryCollection->MinLevelSetResolution = IntData[0];
+				GeometryCollection->MinLevelSetResolution_DEPRECATED = IntData[0];
 			}
 		}
 	}
@@ -764,7 +764,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 		{
 			if (IntData.Num() > 0)
 			{
-				GeometryCollection->MaxLevelSetResolution = IntData[0];
+				GeometryCollection->MaxLevelSetResolution_DEPRECATED = IntData[0];
 			}
 		}
 	}
@@ -786,7 +786,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 		{
 			if (IntData.Num() > 0)
 			{
-				GeometryCollection->MinClusterLevelSetResolution = IntData[0];
+				GeometryCollection->MinClusterLevelSetResolution_DEPRECATED = IntData[0];
 			}
 		}
 	}
@@ -808,7 +808,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 		{
 			if (IntData.Num() > 0)
 			{
-				GeometryCollection->MaxClusterLevelSetResolution = IntData[0];
+				GeometryCollection->MaxClusterLevelSetResolution_DEPRECATED = IntData[0];
 			}
 		}
 	}
@@ -830,7 +830,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 		{
 			if (FloatData.Num() > 0)
 			{
-				GeometryCollection->CollisionObjectReductionPercentage = FloatData[0];
+				GeometryCollection->CollisionObjectReductionPercentage_DEPRECATED = FloatData[0];
 			}
 		}
 	}
@@ -919,7 +919,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 		{
 			if (FloatData.Num() > 0)
 			{
-				GeometryCollection->CollisionParticlesFraction = FloatData[0];
+				GeometryCollection->CollisionParticlesFraction_DEPRECATED = FloatData[0];
 			}
 		}
 	}
@@ -941,7 +941,7 @@ void FHoudiniGeometryCollectionTranslator::ApplyGeometryCollectionAttributes(UGe
 		{
 			if (IntData.Num() > 0)
 			{
-				GeometryCollection->MaximumCollisionParticles = IntData[0];
+				GeometryCollection->MaximumCollisionParticles_DEPRECATED = IntData[0];
 			}
 		}
 	}
