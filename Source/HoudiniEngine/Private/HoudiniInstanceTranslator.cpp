@@ -134,6 +134,13 @@ FHoudiniInstanceTranslator::PopulateInstancedOutputPartData(
 		OutInstancedOutputPartData.AllBakeActorNames.Empty();
 	}
 
+	// Get the bake actor class attribute
+	if (!FHoudiniEngineUtils::GetBakeActorClassAttribute(InHGPO.GeoId, InHGPO.PartId,  OutInstancedOutputPartData.AllBakeActorClassNames))
+	{
+		// No attribute specified
+		OutInstancedOutputPartData.AllBakeActorClassNames.Empty();
+	}
+
 	// Get the unreal_bake_folder attribute
 	if (!FHoudiniEngineUtils::GetBakeFolderAttribute(InHGPO.GeoId, OutInstancedOutputPartData.AllBakeFolders, InHGPO.PartId))
 	{
@@ -377,11 +384,26 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 					InstancedOutputPartData.PerInstanceCustomData[VariationOriginalIndex], NewInstancerComponent);
 			}
 
-			// If the instanced object (by ref) wasn't found, hide the component
+			// See if the HiddenInGame property is overriden
+			bool bOverridesHiddenInGame = false;
+			for (auto& CurPropAttr : InstancedOutputPartData.AllPropertyAttributes)
+			{
+				if (CurPropAttr.AttributeName.Equals(TEXT("HiddenInGame"))
+					|| CurPropAttr.AttributeName.Equals(TEXT("bHiddenInGame")))
+				{
+					bOverridesHiddenInGame = true;
+				}
+			}
+
+			// If the instanced object (by ref) wasn't found, hide the component	
 			if(InstancedObject == DefaultReferenceSM)
 				NewInstancerComponent->SetHiddenInGame(true);
 			else
-				NewInstancerComponent->SetHiddenInGame(false);
+			{
+				// Dont force the property if it is overriden by generic attributes
+				if (!bOverridesHiddenInGame)
+					NewInstancerComponent->SetHiddenInGame(false);
+			}
 
 			FHoudiniOutputObject& NewOutputObject = NewOutputObjects.FindOrAdd(OutputIdentifier);
 			if (bIsProxyMesh)
@@ -424,6 +446,9 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 			if(InstancedOutputPartData.AllBakeActorNames.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.AllBakeActorNames[FirstOriginalInstanceIndex].IsEmpty())
 				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, InstancedOutputPartData.AllBakeActorNames[FirstOriginalInstanceIndex]);
 
+			if(InstancedOutputPartData.AllBakeActorClassNames.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.AllBakeActorClassNames[FirstOriginalInstanceIndex].IsEmpty())
+				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR_CLASS, InstancedOutputPartData.AllBakeActorClassNames[FirstOriginalInstanceIndex]);
+
 			if(InstancedOutputPartData.AllBakeFolders.IsValidIndex(FirstOriginalInstanceIndex) && !InstancedOutputPartData.AllBakeFolders[FirstOriginalInstanceIndex].IsEmpty())
 				NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_FOLDER, InstancedOutputPartData.AllBakeFolders[FirstOriginalInstanceIndex]);
 
@@ -450,6 +475,8 @@ FHoudiniInstanceTranslator::CreateAllInstancersFromHoudiniOutput(
 							NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_LEVEL_PATH, PerSplitAttributes->LevelPath);
 						if (!PerSplitAttributes->BakeActorName.IsEmpty())
 							NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, PerSplitAttributes->BakeActorName);
+						if (!PerSplitAttributes->BakeActorClassName.IsEmpty())
+							NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR_CLASS, PerSplitAttributes->BakeActorClassName);
 						if (!PerSplitAttributes->BakeOutlinerFolder.IsEmpty())
 							NewOutputObject.CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER, PerSplitAttributes->BakeOutlinerFolder);
 						if (!PerSplitAttributes->BakeFolder.IsEmpty())
@@ -1173,6 +1200,11 @@ FHoudiniInstanceTranslator::GetPackedPrimitiveInstancerHGPOsAndTransforms(
 	const bool bHasBakeActorNames = FHoudiniEngineUtils::GetBakeActorAttribute(
 		InHGPO.GeoId, InHGPO.PartId,  AllBakeActorNames, HAPI_ATTROWNER_PRIM);
 
+	// Get the bake actor class attribute
+	TArray<FString> AllBakeActorClassNames;
+	const bool bHasBakeActorClassNames = FHoudiniEngineUtils::GetBakeActorClassAttribute(
+		InHGPO.GeoId, InHGPO.PartId,  AllBakeActorClassNames, HAPI_ATTROWNER_PRIM);
+
 	// Get the unreal_bake_folder attribute
 	TArray<FString> AllBakeFolders;
 	const bool bHasBakeFolders = FHoudiniEngineUtils::GetBakeFolderAttribute(
@@ -1369,6 +1401,11 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 	const bool bHasBakeActorNames = FHoudiniEngineUtils::GetBakeActorAttribute(
 		InHGPO.GeoId, InHGPO.PartId,  AllBakeActorNames, HAPI_ATTROWNER_POINT);
 
+	// Get the bake actor class attribute
+	TArray<FString> AllBakeActorClassNames;
+	const bool bHasBakeActorClassNames = FHoudiniEngineUtils::GetBakeActorClassAttribute(
+		InHGPO.GeoId, InHGPO.PartId,  AllBakeActorClassNames, HAPI_ATTROWNER_POINT);
+
 	// Get the unreal_bake_folder attribute
 	TArray<FString> AllBakeFolders;
 	const bool bHasBakeFolders = FHoudiniEngineUtils::GetBakeFolderAttribute(
@@ -1487,7 +1524,7 @@ FHoudiniInstanceTranslator::GetAttributeInstancerObjectsAndTransforms(
 				// To avoid trying to load an object that fails multiple times,
 				// still add it to the array if null so we can still skip further attempts
 				UObject* AttributeObject = StaticFindObjectSafe(UObject::StaticClass(), nullptr, *Iter);
-				if (IsValid(AttributeObject))
+				if (!IsValid(AttributeObject))
 					AttributeObject = StaticLoadObject(
 						UObject::StaticClass(), nullptr, *Iter, nullptr, LOAD_None, nullptr);
 
@@ -3318,7 +3355,10 @@ FHoudiniInstancedOutputPartData::BuildOriginalInstancedTransformsAndObjectArrays
 {
 	{
 		const int32 NumObjects = NumInstancedTransformsPerObject.Num();
-		OriginalInstancedTransforms.Init(TArray<FTransform>(), NumObjects);
+		OriginalInstancedTransforms.SetNumUninitialized(NumObjects);
+		for (int32 n = 0; n < OriginalInstancedTransforms.Num(); n++)
+			OriginalInstancedTransforms[n] = TArray<FTransform>();
+
 		int32 ObjectIndexOffset = 0;
 		for (int32 ObjIndex = 0; ObjIndex < NumObjects; ++ObjIndex)
 		{
@@ -3363,7 +3403,10 @@ FHoudiniInstancedOutputPartData::BuildOriginalInstancedTransformsAndObjectArrays
 
 	{
 		const int32 NumObjects = NumInstancedIndicesPerObject.Num();
-		OriginalInstancedIndices.Init(TArray<int32>(), NumObjects);
+		OriginalInstancedIndices.SetNumUninitialized(NumObjects);
+		for (int32 n = 0; n < OriginalInstancedIndices.Num(); n++)
+			OriginalInstancedIndices[n] = TArray<int32>();
+
 		int32 ObjectIndexOffset = 0;
 		for (int32 EntryIndex = 0; EntryIndex < NumObjects; ++EntryIndex)
 		{
@@ -3382,7 +3425,10 @@ FHoudiniInstancedOutputPartData::BuildOriginalInstancedTransformsAndObjectArrays
 
 	{
 		const int32 NumObjects = NumPerInstanceCustomDataPerObject.Num();
-		PerInstanceCustomData.Init(TArray<float>(), NumObjects);
+		PerInstanceCustomData.SetNumUninitialized(NumObjects);
+		for (int32 n = 0; n < PerInstanceCustomData.Num(); n++)
+			PerInstanceCustomData[n] = TArray<float>();
+
 		int32 ObjectIndexOffset = 0;
 		for (int32 EntryIndex = 0; EntryIndex < NumObjects; ++EntryIndex)
 		{

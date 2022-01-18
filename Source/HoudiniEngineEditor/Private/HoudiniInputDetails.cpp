@@ -671,6 +671,85 @@ FHoudiniInputDetails::AddImportAsReferenceCheckbox(TSharedRef< SVerticalBox > Ve
 			return CheckStateChangedImportAsReference(InInputs, NewState);
 		})
 	];
+	
+	// Add Rot/Scale to input as reference
+	auto IsCheckedImportAsReferenceRotScale= [](UHoudiniInput* InInput)
+	{
+		if (!IsValid(InInput))
+			return ECheckBoxState::Unchecked;
+
+		return InInput->GetImportAsReferenceRotScaleEnabled() ? ECheckBoxState::Checked : ECheckBoxState::Unchecked;
+	};
+
+	// Lambda for changing PackBeforeMerge state
+	auto CheckStateChangedImportAsReferenceRotScale= [MainInput](TArray<UHoudiniInput*> InInputsToUpdate, ECheckBoxState NewState)
+	{
+		if (!IsValid(MainInput))
+			return;
+
+		bool bNewState = (NewState == ECheckBoxState::Checked);
+
+		if (MainInput->GetImportAsReferenceRotScaleEnabled() == bNewState)
+			return;
+
+		// Record a transaction for undo/redo
+		FScopedTransaction Transaction(
+			TEXT(HOUDINI_MODULE_EDITOR),
+			LOCTEXT("HoudiniInputAsReferenceRotScale", "Houdini Input: Changing InputAsReference Rot/Scale"),
+			MainInput->GetOuter());
+
+		for (auto CurInput : InInputsToUpdate)
+		{
+			if (!IsValid(CurInput))
+				continue;
+
+			if (CurInput->GetImportAsReferenceRotScaleEnabled() == bNewState)
+				continue;
+
+			TArray<UHoudiniInputObject*> * InputObjs = CurInput->GetHoudiniInputObjectArray(CurInput->GetInputType());
+			if (InputObjs) 
+			{
+				// Mark all its input objects as changed to trigger recook.
+				for (auto CurInputObj : *InputObjs) 
+				{
+					if (!IsValid(CurInputObj))
+						continue;
+
+					if (CurInputObj->GetImportAsReferenceRotScaleEnabled() != bNewState)
+					{
+						CurInputObj->SetImportAsReferenceRotScaleEnabled(bNewState);
+						CurInputObj->MarkChanged(true);
+					}
+				}
+			}
+
+			CurInput->Modify();
+			CurInput->SetImportAsReferenceRotScaleEnabled(bNewState);
+		}
+	};
+
+	TSharedPtr< SCheckBox > CheckBoxImportAsReferenceRotScale;
+	VerticalBox->AddSlot().Padding(2, 2, 5, 2).AutoHeight()
+	[
+		SAssignNew(CheckBoxImportAsReferenceRotScale, SCheckBox)
+		.Content()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("ImportInputAsRefRotScaleCheckbox", "Add rot/scale to input references"))
+			.ToolTipText(LOCTEXT("ImportInputAsRefRotScaleCheckboxTip", "Add rot/scale attributes to the input references when Import input as references is enabled"))
+			.Font(FEditorStyle::GetFontStyle(TEXT("PropertyWindow.NormalFont")))
+		]
+		.IsChecked_Lambda([=]()
+		{
+			return IsCheckedImportAsReferenceRotScale(MainInput);
+		})
+		.OnCheckStateChanged_Lambda([=](ECheckBoxState NewState)
+		{
+			return CheckStateChangedImportAsReferenceRotScale(InInputs, NewState);
+		})
+		.IsEnabled(IsCheckedImportAsReference(MainInput))
+			
+	];
 }
 void
 FHoudiniInputDetails::AddExportCheckboxes(TSharedRef< SVerticalBox > VerticalBox, TArray<UHoudiniInput*>& InInputs)
@@ -999,7 +1078,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		new FAssetThumbnail(InputObject, 64, 64, AssetThumbnailPool));
 
 	// Lambda for adding new geometry input objects
-	auto UpdateGeometryObjectAt = [MainInput, &CategoryBuilder](TArray<UHoudiniInput*> InInputsToUpdate, const int32& AtIndex, UObject* InObject)
+	auto UpdateGeometryObjectAt = [MainInput, &CategoryBuilder](TArray<UHoudiniInput*> InInputsToUpdate, const int32& AtIndex, UObject* InObject, const bool& bAutoInserMissingObjects)
 	{
 		if (!IsValid(MainInput))
 			return;
@@ -1018,9 +1097,22 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 			if (!IsValid(CurInput))
 				continue;
 
-			UObject* InputObject = CurInput->GetInputObjectAt(EHoudiniInputType::Geometry, AtIndex);
-			if (InObject == InputObject)
+			UObject* InputObject = nullptr;
+			int32 NumInputObjects = CurInput->GetNumberOfInputObjects(EHoudiniInputType::Geometry);
+			if (AtIndex < NumInputObjects)
+			{
+				InputObject = CurInput->GetInputObjectAt(EHoudiniInputType::Geometry, AtIndex);
+				if (InObject == InputObject)
+					continue;
+			}
+			else if (bAutoInserMissingObjects)
+			{
+				CurInput->InsertInputObjectAt(EHoudiniInputType::Geometry, AtIndex);
+			}
+			else
+			{
 				continue;
+			}
 		
 			UHoudiniInputObject* CurrentInputObjectWrapper = CurInput->GetHoudiniInputObjectAt(AtIndex);
 			if (CurrentInputObjectWrapper)
@@ -1048,7 +1140,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		})
 		.OnAssetDropped_Lambda([InInputs, InGeometryObjectIdx, UpdateGeometryObjectAt](UObject* InObject)
 		{
-			return UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, InObject);
+			return UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, InObject, false);
 		})
 		[
 			SAssignNew(HorizontalBox, SHorizontalBox)
@@ -1151,7 +1243,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 						{
 							ComboButton->SetIsOpen(false);
 							UObject * Object = AssetData.GetAsset();
-							UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, Object);
+							UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, Object, false);
 						}
 					}
 				),
@@ -1191,20 +1283,19 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 			TArray<FAssetData> CBSelections;
 			GEditor->GetContentBrowserSelections(CBSelections);
 
-			// Get the first selected static mesh object
-			UObject* Object = nullptr;
-			for (auto & CurAssetData : CBSelections) 
+			TArray<const UClass*> AllowedClasses = UHoudiniInput::GetAllowedClasses(EHoudiniInputType::Geometry);
+			int32 CurrentObjectIdx = InGeometryObjectIdx;
+			for (auto& CurAssetData : CBSelections)
 			{
-				if (CurAssetData.AssetClass != UStaticMesh::StaticClass()->GetFName())
+				UObject* Object = CurAssetData.GetAsset();
+				if (!IsValid(Object))
 					continue;
 
-				Object = CurAssetData.GetAsset();
-				break;
-			}
+				if (!UHoudiniInput::IsObjectAcceptable(EHoudiniInputType::Geometry, Object))
+					continue;
 
-			if (IsValid(Object)) 
-			{
-				UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, Object);
+				// Update the object, inserting new one if necessary
+				UpdateGeometryObjectAt(InInputs, CurrentObjectIdx++, Object, true);
 			}
 		}
 		}), TAttribute< FText >(LOCTEXT("GeometryInputUseSelectedAssetFromCB", "Use Selected Asset from Content Browser")))
@@ -1244,7 +1335,7 @@ FHoudiniInputDetails::Helper_CreateGeometryWidget(
 		.Visibility( EVisibility::Visible )
 		.OnClicked_Lambda( [UpdateGeometryObjectAt, InInputs, InGeometryObjectIdx]()
 		{
-			UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, nullptr);
+			UpdateGeometryObjectAt(InInputs, InGeometryObjectIdx, nullptr, false);
 			return FReply::Handled();
 		})
 		[
@@ -3641,6 +3732,7 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			if (bBakeToBlueprint) 
 			{
 				FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToBlueprint(
+					OuterHAC,
 					HoudiniSplineComponent,
 					PackageParams,
 					OwnerActor->GetWorld(), OwnerActor->GetActorTransform());
@@ -3648,6 +3740,7 @@ FHoudiniInputDetails::Helper_CreateCurveWidget(
 			else
 			{
 				FHoudiniEngineBakeUtils::BakeInputHoudiniCurveToActor(
+					OuterHAC,
 					HoudiniSplineComponent,
 					PackageParams,
 					OwnerActor->GetWorld(), OwnerActor->GetActorTransform());

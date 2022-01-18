@@ -57,6 +57,10 @@ public:
 	UPROPERTY()
 	FString BakeActorName;
 
+	// Bake actor class attribute value
+	UPROPERTY()
+	FString BakeActorClassName;
+
 	// bake outliner folder attribute value
 	UPROPERTY()
 	FString BakeOutlinerFolder;
@@ -142,6 +146,10 @@ public:
 	UPROPERTY()
 	TArray<FString> AllBakeActorNames;
 
+	// All bake actor class name attributes from the first attribute owner we could find
+	UPROPERTY()
+	TArray<FString> AllBakeActorClassNames;
+
 	// All unreal_bake_folder attributes (prim attr is checked first then detail)
 	UPROPERTY()
 	TArray<FString> AllBakeFolders;
@@ -169,7 +177,7 @@ public:
 
 	// Specifies that the materials in MaterialAttributes are to be created as an instance
 	UPROPERTY()
-	bool bMaterialOverrideNeedsCreateInstance;
+	bool bMaterialOverrideNeedsCreateInstance = false;
 	
 	// Custom float array per original instanced object
 	// Size is NumCustomFloat * NumberOfInstances

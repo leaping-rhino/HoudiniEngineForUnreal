@@ -163,6 +163,7 @@ public:
 		FHoudiniEngineOutputStats& OutBakeStats);
 
 	static bool BakeCurve(
+		UHoudiniAssetComponent const* const InHoudiniAssetComponent,
 		USplineComponent* InSplineComponent,
 		ULevel* InLevel,
 		const FHoudiniPackageParams &PackageParams,
@@ -171,9 +172,11 @@ public:
 		USplineComponent*& OutSplineComponent,
 		FHoudiniEngineOutputStats& OutBakeStats,
 		FName InOverrideFolderPath=NAME_None,
-		AActor* InActor=nullptr);
+		AActor* InActor=nullptr,
+		UActorFactory* InActorFactory=nullptr);
 
 	static bool BakeCurve(
+		UHoudiniAssetComponent const* const InHoudiniAssetComponent,
 		const FHoudiniOutputObject& InOutputObject,
 		FHoudiniBakedOutputObject& InBakedOutputObject,
 		// const TArray<FHoudiniBakedOutput>& InAllBakedOutputs,
@@ -189,12 +192,14 @@ public:
 		const FString& InFallbackWorldOutlinerFolder="");
 
 	static AActor* BakeInputHoudiniCurveToActor(
+		UHoudiniAssetComponent const* const InHoudiniAssetComponent,
 		UHoudiniSplineComponent * InHoudiniSplineComponent,
 		const FHoudiniPackageParams & PakcageParams,
 		UWorld* WorldToSpawn,
 		const FTransform & SpawnTransform);
 
 	static UBlueprint* BakeInputHoudiniCurveToBlueprint(
+		UHoudiniAssetComponent const* const InHoudiniAssetComponent,
 		UHoudiniSplineComponent * InHoudiniSplineComponent,
 		const FHoudiniPackageParams & PakcageParams,
 		UWorld* WorldToSpawn,
@@ -205,6 +210,7 @@ public:
 		const FHoudiniPackageParams & PackageParams,
 		const TArray<UHoudiniOutput*>& InAllOutputs,
 		const FDirectoryPath& InTempCookFolder,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats);
 
@@ -242,6 +248,7 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats,
 		TArray<EHoudiniInstancerComponentType> const* InInstancerComponentTypesToBake=nullptr,
@@ -264,6 +271,7 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats,
 		AActor* InFallbackActor=nullptr,
@@ -299,6 +307,7 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 		FHoudiniEngineBakedActor& OutBakedActorEntry,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats,
 		AActor* InFallbackActor=nullptr,
@@ -319,6 +328,7 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 		FHoudiniEngineBakedActor& OutBakedActorEntry,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats,
 		AActor* InFallbackActor=nullptr,
@@ -332,6 +342,7 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InCurrentBakedActors,
 		const FString& InTemporaryCookFolder,
 		TArray<UPackage*> & OutCreatedPackages,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats);
 
@@ -428,6 +439,7 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 		FHoudiniEngineBakedActor& OutBakedActorEntry,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats);
 
@@ -447,6 +459,7 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats,
 		AActor* InFallbackActor=nullptr,
@@ -477,6 +490,7 @@ public:
 		const TArray<FHoudiniEngineBakedActor>& InBakedActors,
 		TArray<FHoudiniEngineBakedActor>& OutActors,
 		TArray<UPackage*>& OutPackagesToSave,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
 		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
 		FHoudiniEngineOutputStats& OutBakeStats,
 		AActor* InFallbackActor=nullptr,
@@ -519,7 +533,7 @@ public:
 		TArray<UBlueprint*>& OutBlueprints,
 		TArray<UPackage*>& OutPackagesToSave);
 
-	static bool CopyActorContentsToBlueprint(AActor * InActor, UBlueprint * OutBlueprint);
+	static bool CopyActorContentsToBlueprint(AActor * InActor, UBlueprint * OutBlueprint, bool bInRenameComponentsWithInvalidNames=false);
 
 	static void AddHoudiniMetaInformationToPackage(
 			UPackage * Package, UObject * Object, const TCHAR * Key,
@@ -578,6 +592,7 @@ public:
 	// (uniquely) with a _Pending_Kill suffix (regardless of bInNoPendingKillActors).
 	static bool FindDesiredBakeActorFromBakeActorName(
 		const FString& InBakeActorName,
+		const TSubclassOf<AActor>& InBakeActorClass,
 		ULevel* InLevel,
 		AActor*& OutActor,
 		bool bInNoPendingKillActors=true,
@@ -797,4 +812,59 @@ protected:
 		bool bInDestroyBakedInstancedComponents);
 
 	static UMaterialInterface * BakeSingleMaterialToPackage(UMaterialInterface * InOriginalMaterial, const FHoudiniPackageParams & PackageParams, TArray<UPackage*>& OutPackagesToSave, TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap, FHoudiniEngineOutputStats& OutBakeStats);
+
+	// Returns the AActor class with classname InActorClassName, or nullptr if InActorClassName is none or not a valid
+	// actor class name.
+	static UClass* GetBakeActorClassOverride(const FName& InActorClassName);
+
+	// Returns the AActor class with classname read from the unreal_bake_actor_class attribute, or nullptr if
+	// attribute is not set or is invalid is none or not a valid actor class name.
+	static UClass* GetBakeActorClassOverride(const FHoudiniOutputObject& InOutputObject);
+	
+	// Helper function for getting the appropriate ActorFactory by unreal_bake_actor_class attribute, failing that by
+	// the specified ActorFactoryClass, and lastly by the asset that would be spawned
+	// OutActorClass is set to the Actor UClass specified by InActorClassName or null if InActorClassName is invalid.
+	static UActorFactory* GetActorFactory(const FName& InActorClassName, TSubclassOf<AActor>& OutActorClass, const TSubclassOf<UActorFactory>& InFactoryClass=nullptr, UObject* InAsset=nullptr);
+
+	// Helper function for getting the appropriate ActorFactory by unreal_bake_actor_class attribute (read from
+	// InOutputObject.CachedAttributes), failing that by the specified ActorFactoryClass, and lastly by the asset that
+	// would be spawned
+	// OutActorClass is set to the Actor UClass specified by unreal_bake_actor_class or null if unreal_bake_actor_class
+	// is not set or invalid.
+	static UActorFactory* GetActorFactory(const FHoudiniOutputObject& InOutputObject, TSubclassOf<AActor>& OutActorClass, const TSubclassOf<UActorFactory>& InFactoryClass=nullptr, UObject* InAsset=nullptr);
+
+	// Helper function that spawns an actor via InActorFactory. 
+	static AActor* SpawnBakeActor(UActorFactory* const InActorFactory, UObject* const InAsset, ULevel* const InLevel, const FTransform& InTransform, UHoudiniAssetComponent const* const InHAC, const TSubclassOf<AActor>& InActorClass=nullptr, const FActorSpawnParameters& InSpawnParams=FActorSpawnParameters());
+
+	// Called by SpawnBakeActor after the actor was successfully spawned. Used to copy any settings we need from the
+	// HAC or its owner to the spawned actor and/or its root component.
+	static void PostSpawnBakeActor(AActor* const InSpawnedActor, UHoudiniAssetComponent const * const InHAC);
+
+	// Helper for baking a static mesh output to actors. Returns true if anything was baked. If the mesh had an
+	// associated component and was baked to an actor then bOutBakedToActor is set to true and OutBakedActorEntry
+	// is populated. Some meshes, such as invisible colliders, are not baked to actors, the mesh asset itself is
+	// just baked. In that case bOutBakedToActor is false and OutBakedActorEntry is not populated.
+	static bool BakeStaticMeshOutputObjectToActor(
+		const UHoudiniAssetComponent* InHoudiniAssetComponent,
+		int32 InOutputIndex,
+		const TArray<UHoudiniOutput*>& InAllOutputs,
+		const FHoudiniOutputObjectIdentifier& InIdentifier,
+		const FHoudiniOutputObject& InOutputObject,
+		const TArray<FHoudiniGeoPartObject>& InHGPOs,
+		const TMap<FHoudiniBakedOutputObjectIdentifier, FHoudiniBakedOutputObject>& InOldBakedOutputObjects,
+		const FDirectoryPath& InTempCookFolder,
+		const FDirectoryPath& InBakeFolder,
+		const bool bInReplaceActors,
+		const bool bInReplaceAssets,
+		AActor* InFallbackActor,
+		const FString& InFallbackWorldOutlinerFolder,
+		const TArray<FHoudiniEngineBakedActor>& InAllBakedActors,
+		TMap<UStaticMesh*, UStaticMesh*>& InOutAlreadyBakedStaticMeshMap,
+		TMap<UMaterialInterface *, UMaterialInterface *>& InOutAlreadyBakedMaterialsMap,
+		TArray<UPackage*>& OutPackagesToSave,
+		FHoudiniEngineOutputStats& OutBakeStats,
+		FHoudiniBakedOutputObject& OutBakedOutputObject,
+		bool& bOutBakedToActor,
+		FHoudiniEngineBakedActor& OutBakedActorEntry);
+
 };

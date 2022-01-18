@@ -31,6 +31,7 @@
 #include "EngineUtils.h"
 #include <string>
 
+#include "HoudiniGenericAttribute.h"
 #include "HoudiniOutput.h"
 #include "HoudiniPackageParams.h"
 #include "Containers/UnrealString.h"
@@ -43,7 +44,6 @@ class UHoudiniAssetComponent;
 struct FHoudiniPartInfo;
 struct FHoudiniMeshSocket;
 struct FHoudiniGeoPartObject;
-struct FHoudiniGenericAttribute;
 
 struct FRawMesh;
 
@@ -331,8 +331,55 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// Check if the Houdini asset component is being cooked
 		static bool IsHoudiniAssetComponentCooking(UObject* InObj);
 
+		// Helper function to set float attribute data
+		// The data will be sent in chunks if too large for thrift
+		static HAPI_Result HapiSetAttributeFloatData(
+			const TArray<float>& InFloatData,
+			const HAPI_NodeId& InNodeId,
+			const HAPI_PartId& InPartId,
+			const FString& InAttributeName,
+			const HAPI_AttributeInfo& InAttributeInfo);
+
+		static HAPI_Result HapiSetAttributeFloatData(
+			const float* InFloatData,
+			const HAPI_NodeId& InNodeId,
+			const HAPI_PartId& InPartId,
+			const FString& InAttributeName,
+			const HAPI_AttributeInfo& InAttributeInfo);
+
+		// Helper function to set Int attribute data
+		// The data will be sent in chunks if too large for thrift
+		static HAPI_Result HapiSetAttributeIntData(
+			const TArray<int32>& InIntData,
+			const HAPI_NodeId& InNodeId,
+			const HAPI_PartId& InPartId,
+			const FString& InAttributeName,
+			const HAPI_AttributeInfo& InAttributeInfo);
+
+		static HAPI_Result HapiSetAttributeIntData(
+			const int32* InIntData,
+			const HAPI_NodeId& InNodeId,
+			const HAPI_PartId& InPartId,
+			const FString& InAttributeName,
+			const HAPI_AttributeInfo& InAttributeInfo);
+
+
+		// Helper function to set Vertex Lists
+		// The data will be sent in chunks if too large for thrift
+		static HAPI_Result HapiSetVertexList(
+			const TArray<int32>& InVertexListData,
+			const HAPI_NodeId& InNodeId,
+			const HAPI_PartId& InPartId);
+
+		// Helper function to set Face Counts
+		// The data will be sent in chunks if too large for thrift
+		static HAPI_Result HapiSetFaceCounts(
+			const TArray<int32>& InFaceCounts,
+			const HAPI_NodeId& InNodeId,
+			const HAPI_PartId& InPartId);
+
 		// Helper function to set attribute string data for a single FString
-		static HAPI_Result SetAttributeStringData(
+		static HAPI_Result HapiSetAttributeStringData(
 			const FString& InString,
 			const HAPI_NodeId& InNodeId,
 			const HAPI_PartId& InPartId,
@@ -340,7 +387,8 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const HAPI_AttributeInfo& InAttributeInfo);
 
 		// Helper function to set attribute string data for a FString array
-		static HAPI_Result SetAttributeStringData(
+		// The data will be sent in chunks if too large for thrift
+		static HAPI_Result HapiSetAttributeStringData(
 			const TArray<FString>& InStringArray,
 			const HAPI_NodeId& InNodeId,
 			const HAPI_PartId& InPartId,
@@ -385,7 +433,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			TArray<FHoudiniGenericAttribute>& OutPropertyAttributes);
 
 		static bool UpdateGenericPropertiesAttributes(
-			UObject* InObject, const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes);
+			UObject* InObject, const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes,
+			const bool bInDeferPostEditChangePropertyCalls=false,
+			const FHoudiniGenericAttribute::FFindPropertyFunctionType& InProcessFunction=nullptr);
 
 		// Helper function for setting a generic attribute on geo (UE -> HAPI)
 		static bool SetGenericPropertyAttribute(
@@ -456,6 +506,14 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const int32& InStart = 0,
 			const int32& InCount = -1);
 
+		// Helper function to access the "unreal_level_path" attribute
+		static bool GetLevelPathAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			FString& OutLevelPath,
+			const int32& InPointIndex = 0,
+			const int32& InPrimIndex = 0);
+
 		// Helper function to access the custom output name attribute
 		static bool GetOutputNameAttribute(
 			const HAPI_NodeId& InGeoId,
@@ -464,13 +522,30 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const int32& InStart = 0,
 			const int32& InCount = -1);
 
+		// Helper function to access the custom output name attribute
+		static bool GetOutputNameAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			FString& OutOutputName,
+			const int32& InPointIndex = 0,
+			const int32& InPrimIndex = 0);
+
 		// Helper function to access the custom bake name attribute
 		static bool GetBakeNameAttribute(
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
 			TArray<FString>& OutBakeName,
+			const HAPI_AttributeOwner& InAttribOwner = HAPI_ATTROWNER_INVALID,
 			const int32& InStart = 0,
 			const int32& InCount = -1);
+
+		// Helper function to access the custom bake name attribute
+		static bool GetBakeNameAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId, 
+			FString& OutBakeName,
+			const int32& InPointIndex = 0,
+			const int32& InPrimIndex = 0);
 
 		// Helper function to access the "tile" attribute
 		static bool GetTileAttribute(
@@ -480,6 +555,14 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const HAPI_AttributeOwner& InAttribOwner = HAPI_ATTROWNER_INVALID,
 			const int32& InStart = 0,
 			const int32& InCount = -1);
+
+		// Helper function to access the "tile" attribute
+		static bool GetTileAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			int32& OutTileValue,
+			const int32& InPointIndex = 0,
+			const int32& InPrimIndex = 0);
 
 		static bool GetEditLayerName(
 			const HAPI_NodeId& InGeoId,
@@ -491,6 +574,24 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const HAPI_NodeId& InGeoId,
 			const HAPI_PartId& InPartId,
 			const HAPI_AttributeOwner& InAttribOwner = HAPI_ATTROWNER_INVALID);
+
+		// Helper function to access the "unreal_temp_folder" attribute
+		static bool GetTempFolderAttribute(
+			const HAPI_NodeId& InNodeId,
+			const HAPI_AttributeOwner& InAttributeOwner,
+			TArray<FString>& OutTempFolder,
+			const HAPI_PartId& InPartId=0,
+			const int32& InStart=0,
+			const int32& InCount=-1);
+
+		// Helper function to access the "unreal_temp_folder" attribute
+		// We check for a primitive attribute first, if the primitive attribute does not exist, we check for a
+		// detail attribute.
+		static bool GetTempFolderAttribute(
+			const HAPI_NodeId& InNodeId,
+			FString& OutTempFolder,
+			const HAPI_PartId& InPartId=0,
+			const int32& InPrimIndex=0);
 
 		// Helper function to access the "unreal_bake_folder" attribute
 		static bool GetBakeFolderAttribute(
@@ -511,6 +612,15 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const int32& InStart = 0,
 			const int32& InCount = -1);
 
+		// Helper function to access the "unreal_bake_folder" attribute
+		// We check for a primitive attribute first, if the primitive attribute does not exist, we check for a
+		// detail attribute.
+		static bool GetBakeFolderAttribute(
+			const HAPI_NodeId& InGeoId,
+			FString& OutBakeFolder,
+			const HAPI_PartId& InPartId = 0,
+			const int32& InPrimIndex = 0);
+
 		// Helper function to access the bake output actor attribute (unreal_bake_actor)
 		static bool GetBakeActorAttribute(
 			const HAPI_NodeId& InGeoId,
@@ -520,6 +630,31 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const int32& InStart = 0,
 			const int32& InCount = -1);
 
+		// Helper function to access the bake output actor attribute (unreal_bake_actor)
+		static bool GetBakeActorAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			FString& OutBakeActorName,
+			const int32& InPointIndex = 0,
+			const int32& InPrimIndex = 0);
+
+		// Helper function to access the bake output actor attribute (unreal_bake_actor_class)
+		static bool GetBakeActorClassAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			TArray<FString>& OutBakeActorClassNames,
+			const HAPI_AttributeOwner& InAttributeOwner = HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID,
+			const int32& InStart = 0,
+			const int32& InCount = -1);
+
+		// Helper function to access the bake output actor attribute (unreal_bake_actor_class)
+		static bool GetBakeActorClassAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			FString& OutBakeActorClassName,
+			const int32& InPointIndex = 0,
+			const int32& InPrimIndex = 0);
+
 		// Helper function to access the bake output actor attribute (unreal_bake_outliner_folder)
 		static bool GetBakeOutlinerFolderAttribute(
 			const HAPI_NodeId& InGeoId,
@@ -528,6 +663,14 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			const HAPI_AttributeOwner& InAttributeOwner = HAPI_AttributeOwner::HAPI_ATTROWNER_INVALID,
 			const int32& InStart = 0,
 			const int32& InCount = -1);
+
+		// Helper function to access the bake output actor attribute (unreal_bake_outliner_folder)
+		static bool GetBakeOutlinerFolderAttribute(
+			const HAPI_NodeId& InGeoId,
+			const HAPI_PartId& InPartId,
+			FString& OutBakeOutlinerFolder,
+			const int32& InPointIndex = 0,
+			const int32& InPrimIndex = 0);
 
 		// Adds the "unreal_level_path" primitive attribute
 		static bool AddLevelPathAttribute(
@@ -683,6 +826,9 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 		// in the actor's outer with the same name. If an existing object was found, rename it and return it.
 		static UObject* SafeRenameActor(AActor* InActor, const FString& InName, bool UpdateLabel=true);
 
+		// Validates InPath by converting it to an absolute path for the platform and then calling FPaths::ValidatePath.
+		static bool ValidatePath(const FString& InPath, FText* OutInvalidPathReason=nullptr);
+
 		// -------------------------------------------------
 		// PackageParam utilities
 		// -------------------------------------------------
@@ -721,6 +867,20 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 			bool bAutomaticallySetAttemptToLoadMissingPackages=true,
 			bool bInSkipObjectNameResolutionAndUseDefault=false,
 			bool bInSkipBakeFolderResolutionAndUseDefault=false);
+
+		// Helper for updating FHoudiniPackageParams for temp outputs. This includes configuring the resolver to
+		// resolve the unreal_temp_folder and setting the resolved values on the PackageParams.
+		// If bAutomaticallySetAttemptToLoadMissingPackages is true, then
+		// OutPackageParams.bAttemptToLoadMissingPackages is set to true in EPackageReplaceMode::CreateNewAssets mode.
+		static void UpdatePackageParamsForTempOutputWithResolver(
+			const FHoudiniPackageParams& InPackageParams,
+			const UWorld* InWorldContext,
+			const UObject* OuterComponent,
+			const TMap<FString, FString>& InCachedAttributes,
+			const TMap<FString, FString>& InCachedTokens,
+			FHoudiniPackageParams& OutPackageParams,
+			FHoudiniAttributeResolver& OutResolver,
+			bool bInSkipTempFolderResolutionAndUseDefault=false);
 
 		// -------------------------------------------------
 		// Foliage utilities
@@ -761,5 +921,4 @@ struct HOUDINIENGINE_API FHoudiniEngineUtils
 
 		// Trigger an update of the Blueprint Editor on the game thread
 		static void UpdateBlueprintEditor_Internal(UHoudiniAssetComponent* HAC);
-
 };

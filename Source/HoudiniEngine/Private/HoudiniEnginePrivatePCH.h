@@ -197,6 +197,13 @@
 #define HAPI_UNREAL_ATTRIB_NONWEIGHTBLENDED_LAYERS			"unreal_landscape_layer_nonweightblended"
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_STREAMING_PROXY		"unreal_landscape_streaming_proxy"
 #define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_INFO				"unreal_landscape_layer_info"
+
+// Enable or disable the NoWeightBlend setting for landscape paint layers. 
+// Note this attribute supercedes the unreal_landscape_layer_nonweightblended string attribute.
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_LAYER_NOWEIGHTBLEND		"unreal_landscape_layer_noweightblend"
+#define HAPI_UNREAL_LANDSCAPE_LAYER_NOWEIGHTBLEND_OFF			0
+#define HAPI_UNREAL_LANDSCAPE_LAYER_NOWEIGHTBLEND_ON			1
+
 // Landscape output mode:
 // 0 - Generate (generate a landscape from scratch)
 // 1 - Modify Layer (modify one or more landscape layers only)
@@ -221,6 +228,11 @@
 #define HAPI_UNREAL_LANDSCAPE_EDITLAYER_TYPE_BASE			0
 #define HAPI_UNREAL_LANDSCAPE_EDITLAYER_TYPE_ADDITIVE		1
 
+// Subtractive mode for paint layers on landscape edit layers
+#define HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_SUBTRACTIVE	"unreal_landscape_editlayer_subtractive"
+#define HAPI_UNREAL_LANDSCAPE_EDITLAYER_SUBTRACTIVE_ON		0
+#define HAPI_UNREAL_LANDSCAPE_EDITLAYER_SUBTRACTIVE_OFF		1
+
 #define HAPI_UNREAL_ATTRIB_GENERIC_UPROP_PREFIX				"unreal_uproperty_"
 #define HAPI_UNREAL_ATTRIB_GENERIC_MAT_PARAM_PREFIX			"unreal_material_parameter_"
 
@@ -230,6 +242,7 @@
 #define HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2			"unreal_output_name"
 #define HAPI_UNREAL_ATTRIB_BAKE_NAME						"unreal_bake_name"
 #define HAPI_UNREAL_ATTRIB_BAKE_ACTOR                       "unreal_bake_actor"
+#define HAPI_UNREAL_ATTRIB_BAKE_ACTOR_CLASS                 "unreal_bake_actor_class"
 #define HAPI_UNREAL_ATTRIB_BAKE_OUTLINER_FOLDER             "unreal_bake_outliner_folder"
 
 // data tables
@@ -427,6 +440,7 @@
 
 // Chaos/Geometry collection output attributes
 #define HAPI_UNREAL_ATTRIB_GC_PIECE                                                       "unreal_gc_piece"
+#define HAPI_UNREAL_ATTRIB_GC_CLUSTER_PIECE                                               "unreal_gc_cluster"
 #define HAPI_UNREAL_ATTRIB_GC_NAME                                                       "unreal_gc_name"
 
 #define HAPI_UNREAL_ATTRIB_GC_CLUSTERING_DAMAGE_THRESHOLD                                 "unreal_gc_clustering_damage_threshold"

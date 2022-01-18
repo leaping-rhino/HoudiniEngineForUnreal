@@ -665,7 +665,7 @@ FHoudiniPDGManager::CookOutput(UTOPNetwork* InTOPNet)
 
 	// TODO: ???
 	// Cancel all cooks. This is required as otherwise the graph gets into an infinite cook state (bug?)
-	if(HAPI_RESULT_SUCCESS != FHoudiniApi::CookPDG(
+	if(HAPI_RESULT_SUCCESS != FHoudiniApi::CookPDGAllOutputs(
 		FHoudiniEngine::Get().GetSession(), InTOPNet->NodeId, 0, 0))
 	{
 		HOUDINI_LOG_ERROR(TEXT("PDG Cook Output - Failed to cook %s's output!"), *(InTOPNet->NodeName));
@@ -1704,6 +1704,11 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 		}
 		PackageParams.ObjectName = FString();
 
+		// Static mesh generation / build settings, get it from the HAC if available, otherwise from the plugin
+		// defaults
+		const FHoudiniStaticMeshGenerationProperties& StaticMeshGenerationProperties = HAC ? HAC->StaticMeshGenerationProperties : FHoudiniEngineRuntimeUtils::GetDefaultStaticMeshGenerationProperties();
+		const FMeshBuildSettings& MeshBuildSettings = HAC ? HAC->StaticMeshBuildSettings : FHoudiniEngineRuntimeUtils::GetDefaultMeshBuildSettings();
+
 		// UWorld *World = ParentActor ? ParentActor->GetWorld() : AssetLink->GetWorld();
 		UWorld *World = AssetLink->GetWorld();
 
@@ -1753,7 +1758,9 @@ FHoudiniPDGManager::ProcessWorkItemResults()
 									CurrentWorkResultObj.Name,
 									PackageParams,
 									CurrentTOPNode->NodeId,
-									CurrentWorkResult.WorkItemID
+									CurrentWorkResult.WorkItemID,
+									StaticMeshGenerationProperties,
+									MeshBuildSettings
 								), BGEOCommandletAddress);
 							}
 							else

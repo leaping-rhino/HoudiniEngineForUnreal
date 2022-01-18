@@ -97,6 +97,7 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			TMap<FString, UMaterialInterface*>& InAssignmentMaterialMap,
 			TMap<FString, UMaterialInterface*>& InReplacementMaterialMap,
 			const TMap<FString, UMaterialInterface*>& InAllOutputMaterials,
+			UObject* const InOuterComponent,
 			const bool& InForceRebuild,
 			const EHoudiniStaticMeshMethod& InStaticMeshMethod,
 			const FHoudiniStaticMeshGenerationProperties& InSMGenerationProperties,
@@ -133,6 +134,25 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const TArray<TYPE>& InData,
 			TArray<TYPE>& OutSplitData);
 
+		// Try to find the named InPropertyName property on the source model at InSourceModelIndex on InStaticMesh.
+		static bool TryToFindPropertyOnSourceModel(
+			UStaticMesh* const InStaticMesh,
+			const int32 InSourceModelIndex,
+			const FString& InPropertyName,
+			FEditPropertyChain& InPropertyChain,
+			bool& bOutSkipDefaultIfPropertyNotFound,
+			FProperty*& OutFoundProperty,
+			UObject*& OutFoundPropertyObject,
+			void*& OutContainer);
+
+		// Try to the find the named InPropertyName property on InSourceModel.
+		static bool TryToFindPropertyOnSourceModel(
+			FStaticMeshSourceModel& InSourceModel,
+			const FString& InPropertyName,
+			FEditPropertyChain& InPropertyChain,
+			FProperty*& OutFoundProperty,
+			void*& OutContainer);
+
 		// Update the MeshBuild Settings using the values from the runtime settings/overrides on the HAC
 		void UpdateMeshBuildSettings(
 			FMeshBuildSettings& OutMeshBuildSettings,
@@ -140,6 +160,21 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			const bool& bHasTangents,
 			const bool& bHasLightmapUVSet);
 
+
+		// Copy supported (non-generic) attributes from the split by point/prim index.
+		void CopyAttributesFromHGPOForSplit(
+			const int32 InPointIndex,
+			const int32 InPrimIndex,
+			TMap<FString, FString>& OutAttributes,
+			TMap<FString, FString>& OutTokens);
+	
+		// Copy supported (non-generic) attributes from the split
+		void CopyAttributesFromHGPOForSplit(
+			const FString& InSplitGroupName, TMap<FString, FString>& OutAttributes, TMap<FString, FString>& OutTokens);
+
+		// Copy supported (non-generic) attributes from the split via outputobjectidentifier
+		void CopyAttributesFromHGPOForSplit(
+			const FHoudiniOutputObjectIdentifier& InOutputObjectIdentifier, TMap<FString, FString>& OutAttributes, TMap<FString, FString>& OutTokens);
 
 		//-----------------------------------------------------------------------------------------------------------------------------
 		// ACCESSORS
@@ -250,8 +285,10 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		
 		// Helper functions to generate the simple colliders and add them to the aggregate
 		static int32 GenerateBoxAsSimpleCollision(const TArray<FVector>& InPositionArray, FKAggregateGeom& OutAggregateCollisions);
+		static int32 GenerateOrientedBoxAsSimpleCollision(const TArray<FVector>& InPositionArray, FKAggregateGeom& OutAggregateCollisions);
 		static int32 GenerateSphereAsSimpleCollision(const TArray<FVector>& InPositionArray, FKAggregateGeom& OutAggregateCollisions);
 		static int32 GenerateSphylAsSimpleCollision(const TArray<FVector>& InPositionArray, FKAggregateGeom& OutAggregateCollisions);
+		static int32 GenerateOrientedSphylAsSimpleCollision(const TArray<FVector>& InPositionArray, FKAggregateGeom& OutAggregateCollisions);
 		static int32 GenerateKDopAsSimpleCollision(const TArray<FVector>& InPositionArray, const TArray<FVector> &Dirs, FKAggregateGeom& OutAggregateCollisions);
 
 		// Helper functions for the simple colliders generation
@@ -267,7 +304,7 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 		static UMeshComponent* CreateMeshComponent(UObject *InOuterComponent, const TSubclassOf<UMeshComponent>& InComponentType);
 
 		// Helper to update an existing mesh component
-		static void UpdateMeshComponent(UMeshComponent *InMeshComponent, const FHoudiniOutputObjectIdentifier &InOutputIdentifier,
+		static void UpdateMeshComponent(UMeshComponent *InMeshComponent, UObject *InMesh, const FHoudiniOutputObjectIdentifier &InOutputIdentifier,
 			const FHoudiniGeoPartObject *InHGPO, TArray<AActor*> & HoudiniCreatedSocketActors, TArray<AActor*> & HoudiniAttachedSocketActors,
 			bool bInApplyGenericProperties=true);
 
@@ -281,11 +318,11 @@ struct HOUDINIENGINE_API FHoudiniMeshTranslator
 			FHoudiniGeoPartObject const *& OutFoundHGPO,
 			bool &bCreated);
 
-		// Helper to initialize a UStaticMeshComponent after it was created.
-		static bool PostCreateStaticMeshComponent(UStaticMeshComponent *InComponent, UObject *InMesh);
+		// Helper to set or update the mesh on UStaticMeshComponent
+		static bool UpdateMeshOnStaticMeshComponent(UStaticMeshComponent *InComponent, UObject *InMesh);
 
-		// Helper to initialize a UHoudiniStaticMeshComponent after it was created.
-		static bool PostCreateHoudiniStaticMeshComponent(UHoudiniStaticMeshComponent *InComponent, UObject *InMesh);
+		// Helper to set or update the mesh on UHoudiniStaticMeshComponent
+		static bool UpdateMeshOnHoudiniStaticMeshComponent(UHoudiniStaticMeshComponent *InComponent, UObject *InMesh);
 
 		static bool AddActorsToMeshSocket(UStaticMeshSocket * Socket, UStaticMeshComponent * StaticMeshComponent, 
 			TArray<AActor*>& HoudiniCreatedSocketActors, TArray<AActor*>& HoudiniAttachedSocketActors);

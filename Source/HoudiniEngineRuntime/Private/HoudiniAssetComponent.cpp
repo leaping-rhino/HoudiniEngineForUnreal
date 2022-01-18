@@ -52,6 +52,8 @@
 #include "Serialization/CustomVersion.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "UObject/UObjectGlobals.h"
+#include "BodySetupEnums.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 
 #if WITH_EDITOR
 	#include "Editor/UnrealEd/Private/GeomFitUtils.h"
@@ -989,6 +991,18 @@ UHoudiniAssetComponent::HasPreviousBakeOutput() const
 	}
 
 	return false;
+}
+
+FString
+UHoudiniAssetComponent::GetBakeFolderOrDefault() const
+{
+	return !BakeFolder.Path.IsEmpty() ? BakeFolder.Path : FHoudiniEngineRuntime::Get().GetDefaultBakeFolder();
+}
+
+FString
+UHoudiniAssetComponent::GetTemporaryCookFolderOrDefault() const
+{
+	return !TemporaryCookFolder.Path.IsEmpty() ? TemporaryCookFolder.Path : FHoudiniEngineRuntime::Get().GetDefaultTemporaryCookFolder();
 }
 
 bool

@@ -1129,7 +1129,7 @@ FHoudiniSplineTranslator::HapiCreateCurveInputNodeForDataLegacy(
 	if (PartInfos.vertexCount > 0)
 	{
 		// the vertex list
-		TArray< int > VertexList;
+		TArray<int> VertexList;
 		VertexList.SetNumUninitialized(PartInfos.vertexCount);
 
 		if (FHoudiniApi::GetVertexList(
@@ -1813,7 +1813,7 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 
 		TArray<FString> BakeNames;
 		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeNameAttribute(
-			InHGPO.GeoId, InHGPO.PartId, BakeNames, 0, 1))
+			InHGPO.GeoId, InHGPO.PartId, BakeNames, HAPI_ATTROWNER_INVALID, 0, 1))
 		{
 			if (BakeNames.Num() > 0 && !BakeNames[0].IsEmpty())
 			{
@@ -1830,6 +1830,17 @@ FHoudiniSplineTranslator::CreateOutputSplinesFromHoudiniGeoPartObject(
 			{
 				// cache the bake actor attribute on the output object
 				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR, BakeOutputActorNames[0]);
+			}
+		}
+
+		TArray<FString> BakeOutputActorClassNames;
+		if (FoundOutputObject && FHoudiniEngineUtils::GetBakeActorClassAttribute(
+			InHGPO.GeoId, InHGPO.PartId, BakeOutputActorClassNames, HAPI_ATTROWNER_INVALID, 0, 1))
+		{
+			if (BakeOutputActorClassNames.Num() > 0 && !BakeOutputActorClassNames[0].IsEmpty())
+			{
+				// cache the bake actor attribute on the output object
+				FoundOutputObject->CachedAttributes.Add(HAPI_UNREAL_ATTRIB_BAKE_ACTOR_CLASS, BakeOutputActorClassNames[0]);
 			}
 		}
 

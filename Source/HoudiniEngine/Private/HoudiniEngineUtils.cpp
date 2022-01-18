@@ -128,6 +128,11 @@ FHoudiniEngineUtils::PackageGUIDComponentNameLength = 12;
 const int32
 FHoudiniEngineUtils::PackageGUIDItemNameLength = 8;
 
+// Maximum size of the data that can be sent via thrift
+#define THRIFT_MAX_CHUNKSIZE			100 * 1024 * 1024
+//#define THRIFT_MAX_CHUNKSIZE			2048 * 2048
+//#define THRIFT_MAX_CHUNKSIZE_STRING		256 * 256
+
 const FString
 FHoudiniEngineUtils::GetErrorDescription(HAPI_Result Result)
 {
@@ -902,6 +907,23 @@ FHoudiniEngineUtils::SafeRenameActor(AActor* InActor, const FString& InName, boo
 	return PrevObj;
 }
 
+bool
+FHoudiniEngineUtils::ValidatePath(const FString& InPath, FText* OutInvalidPathReason)
+{
+	FString AbsolutePath;
+	if (InPath.StartsWith("/Game/")) 
+	{
+		const FString RelativePath = FPaths::ProjectContentDir() + InPath.Mid(6, InPath.Len() - 6);
+		AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*RelativePath);
+	}
+	else 
+	{
+		AbsolutePath = IFileManager::Get().ConvertToAbsolutePathForExternalAppForRead(*InPath);
+	}
+
+	return FPaths::ValidatePath(AbsolutePath, OutInvalidPathReason); 
+}
+
 void
 FHoudiniEngineUtils::FillInPackageParamsForBakingOutput(
 	FHoudiniPackageParams& OutPackageParams,
@@ -1040,6 +1062,45 @@ FHoudiniEngineUtils::FillInPackageParamsForBakingOutputWithResolver(
 	}
 }
 
+void
+FHoudiniEngineUtils::UpdatePackageParamsForTempOutputWithResolver(
+	const FHoudiniPackageParams& InPackageParams,
+	const UWorld* InWorldContext,
+	const UObject* InOuterComponent,
+	const TMap<FString, FString>& InCachedAttributes,
+	const TMap<FString, FString>& InCachedTokens,
+	FHoudiniPackageParams& OutPackageParams,
+	FHoudiniAttributeResolver& OutResolver,
+	bool bInSkipTempFolderResolutionAndUseDefault)
+{
+	// Populate OutPackageParams from InPackageParams and then update it by resolving user attributes using string tokens.
+	//
+	// User specified attributes (eg unreal_temp_folder) are then resolved, with the defaults being those tokens configured
+	// from the initial PackageParams. Once resolved, we updated the relevant fields in PackageParams and update the
+	// resolver tokens with these final values.
+	//
+	OutPackageParams = InPackageParams;
+	
+	TMap<FString, FString> Tokens = InCachedTokens;
+	OutPackageParams.UpdateTokensFromParams(InWorldContext, InOuterComponent, Tokens);
+	OutResolver.SetCachedAttributes(InCachedAttributes);
+	OutResolver.SetTokensFromStringMap(Tokens);
+
+	if (!bInSkipTempFolderResolutionAndUseDefault)
+	{
+		// Now resolve the temp folder
+		const FString TempFolder = OutResolver.ResolveTempFolder();
+		if (!TempFolder.IsEmpty())
+			OutPackageParams.TempCookFolder = TempFolder;
+	}
+
+	if (!bInSkipTempFolderResolutionAndUseDefault)
+	{
+		// Update the tokens from the package params
+		OutPackageParams.UpdateTokensFromParams(InWorldContext, InOuterComponent, Tokens);
+		OutResolver.SetTokensFromStringMap(Tokens);
+	}
+}
 
 bool
 FHoudiniEngineUtils::RepopulateFoliageTypeListInUI()
@@ -2367,8 +2428,10 @@ bool FHoudiniEngineUtils::GatherImmediateOutputGeoInfos(const HAPI_NodeId& InNod
 				NumOutputs))
 			{
 				// Gather all the output nodes
-				for (const HAPI_GeoInfo& OutputGeoInfo : OutputGeoInfos)
+				for (HAPI_GeoInfo& OutputGeoInfo : OutputGeoInfos)
 				{
+					// This geo should be output. Be sure to ignore any template flags. 
+					OutputGeoInfo.isTemplated = false;
 					OutGeoInfos.Add(OutputGeoInfo);
 					GatheredNodeIds.Add(OutputGeoInfo.nodeId);
 					OutForceNodesCook.Add(OutputGeoInfo.nodeId); // Ensure this output node gets cooked
@@ -2420,6 +2483,8 @@ bool FHoudiniEngineUtils::GatherImmediateOutputGeoInfos(const HAPI_NodeId& InNod
 								&GeoInfo)
 							)
 						{
+							// This geo should be output. Be sure to ignore any templated flags.
+							GeoInfo.isTemplated = false;
 							OutGeoInfos.Add(GeoInfo);
 							GatheredNodeIds.Add(DisplayNodeId);
 							// If this node doesn't have a part_id count, ensure it gets cooked.
@@ -3094,9 +3159,196 @@ void FHoudiniEngineUtils::UpdateBlueprintEditor_Internal(UHoudiniAssetComponent*
 			
 	// Also somehow reselect ?
 }
+HAPI_Result
+FHoudiniEngineUtils::HapiSetAttributeFloatData(
+	const TArray<float>& InFloatData,
+	const HAPI_NodeId& InNodeId,
+	const HAPI_PartId& InPartId,
+	const FString& InAttributeName,
+	const HAPI_AttributeInfo& InAttributeInfo)
+{
+	if (InFloatData.Num() != InAttributeInfo.count * InAttributeInfo.tupleSize)
+		return HAPI_RESULT_INVALID_ARGUMENT;
+
+	return FHoudiniEngineUtils::HapiSetAttributeFloatData(InFloatData.GetData(), InNodeId, InPartId, InAttributeName, InAttributeInfo);
+}
 
 HAPI_Result
-FHoudiniEngineUtils::SetAttributeStringData(
+FHoudiniEngineUtils::HapiSetAttributeFloatData(
+	const float* InFloatData,
+	const HAPI_NodeId& InNodeId,
+	const HAPI_PartId& InPartId,
+	const FString& InAttributeName,
+	const HAPI_AttributeInfo& InAttributeInfo)
+{
+	if (InAttributeInfo.count <= 0 || InAttributeInfo.tupleSize < 1)
+		return HAPI_RESULT_INVALID_ARGUMENT;
+
+	HAPI_Result Result = HAPI_RESULT_FAILURE;
+	int32 ChunkSize = THRIFT_MAX_CHUNKSIZE / InAttributeInfo.tupleSize;
+	if (InAttributeInfo.count > ChunkSize)
+	{
+		// Send the attribte in chunks
+		for (int32 ChunkStart = 0; ChunkStart < InAttributeInfo.count; ChunkStart += ChunkSize)
+		{
+			int32 CurCount = InAttributeInfo.count - ChunkStart > ChunkSize ? ChunkSize : InAttributeInfo.count - ChunkStart;
+
+			Result = FHoudiniApi::SetAttributeFloatData(
+				FHoudiniEngine::Get().GetSession(),
+				InNodeId, InPartId, TCHAR_TO_ANSI(*InAttributeName),
+				&InAttributeInfo, InFloatData,
+				ChunkStart, CurCount);
+
+			if (Result != HAPI_RESULT_SUCCESS)
+				break;
+		}
+	}
+	else
+	{
+		// Send all the attribute values once
+		Result = FHoudiniApi::SetAttributeFloatData(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId, InPartId, TCHAR_TO_ANSI(*InAttributeName),
+			&InAttributeInfo, InFloatData,
+			0, InAttributeInfo.count);
+	}
+
+	return Result;
+}
+
+HAPI_Result
+FHoudiniEngineUtils::HapiSetAttributeIntData(
+	const TArray<int32>& InIntData,
+	const HAPI_NodeId& InNodeId,
+	const HAPI_PartId& InPartId,
+	const FString& InAttributeName,
+	const HAPI_AttributeInfo& InAttributeInfo)
+{
+	if (InIntData.Num() != InAttributeInfo.count * InAttributeInfo.tupleSize)
+		return HAPI_RESULT_INVALID_ARGUMENT;
+
+	return FHoudiniEngineUtils::HapiSetAttributeIntData(
+		InIntData.GetData(), InNodeId, InPartId, InAttributeName, InAttributeInfo);
+}
+
+HAPI_Result
+FHoudiniEngineUtils::HapiSetAttributeIntData(	
+	const int32* InIntData,
+	const HAPI_NodeId& InNodeId,
+	const HAPI_PartId& InPartId,
+	const FString& InAttributeName,
+	const HAPI_AttributeInfo& InAttributeInfo)
+{
+	if (InAttributeInfo.count <= 0 || InAttributeInfo.tupleSize < 1)
+		return HAPI_RESULT_INVALID_ARGUMENT;
+
+	HAPI_Result Result = HAPI_RESULT_FAILURE;
+	int32 ChunkSize = THRIFT_MAX_CHUNKSIZE / InAttributeInfo.tupleSize;
+	if (InAttributeInfo.count > ChunkSize)
+	{
+		// Send the attribte in chunks
+		for (int32 ChunkStart = 0; ChunkStart < InAttributeInfo.count; ChunkStart += ChunkSize)
+		{
+			int32 CurCount = InAttributeInfo.count - ChunkStart > ChunkSize ? ChunkSize : InAttributeInfo.count - ChunkStart;
+
+			Result = FHoudiniApi::SetAttributeIntData(
+				FHoudiniEngine::Get().GetSession(),
+				InNodeId, InPartId, TCHAR_TO_ANSI(*InAttributeName),
+				&InAttributeInfo, InIntData,
+				ChunkStart, CurCount);
+
+			if (Result != HAPI_RESULT_SUCCESS)
+				break;
+		}
+	}
+	else
+	{
+		// Send all the attribute values once
+		Result = FHoudiniApi::SetAttributeIntData(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId, InPartId, TCHAR_TO_ANSI(*InAttributeName),
+			&InAttributeInfo, InIntData,
+			0, InAttributeInfo.count);
+	}
+
+	return Result;
+}
+
+HAPI_Result
+FHoudiniEngineUtils::HapiSetVertexList(
+	const TArray<int32>& InVertexListData,
+	const HAPI_NodeId& InNodeId,
+	const HAPI_PartId& InPartId)
+{
+	int32 ListNum = InVertexListData.Num();
+	if (ListNum < 1)
+		return HAPI_RESULT_INVALID_ARGUMENT;
+		
+	int32 ChunkSize = THRIFT_MAX_CHUNKSIZE;
+	HAPI_Result Result = HAPI_RESULT_FAILURE;
+	if (ListNum > ChunkSize)
+	{
+		// Send the vertex list in chunks
+		for (int32 ChunkStart = 0; ChunkStart < ListNum; ChunkStart += ChunkSize)
+		{
+			int32 CurCount = ListNum - ChunkStart > ChunkSize ? ChunkSize : ListNum - ChunkStart;
+			Result = FHoudiniApi::SetVertexList(
+				FHoudiniEngine::Get().GetSession(),
+				InNodeId, InPartId, InVertexListData.GetData(), ChunkStart, CurCount);
+
+			if (Result != HAPI_RESULT_SUCCESS)
+				break;
+		}
+	}
+	else
+	{
+		Result = FHoudiniApi::SetVertexList(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId, InPartId, InVertexListData.GetData(), 0, InVertexListData.Num());
+	}
+
+	return Result;
+}
+
+
+HAPI_Result
+FHoudiniEngineUtils::HapiSetFaceCounts(
+	const TArray<int32>& InFaceCounts,
+	const HAPI_NodeId& InNodeId,
+	const HAPI_PartId& InPartId)
+{
+	int32 FaceCountsNum = InFaceCounts.Num();
+	if (FaceCountsNum < 1)
+		return HAPI_RESULT_INVALID_ARGUMENT;
+
+	int32 ChunkSize = THRIFT_MAX_CHUNKSIZE;
+	HAPI_Result Result = HAPI_RESULT_FAILURE;
+	if (FaceCountsNum > ChunkSize)
+	{
+		// Send the vertex list in chunks
+		for (int32 ChunkStart = 0; ChunkStart < FaceCountsNum; ChunkStart += ChunkSize)
+		{
+			int32 CurCount = FaceCountsNum - ChunkStart > ChunkSize ? ChunkSize : FaceCountsNum - ChunkStart;
+			Result = FHoudiniApi::SetFaceCounts(
+				FHoudiniEngine::Get().GetSession(),
+				InNodeId, InPartId, InFaceCounts.GetData(), ChunkStart, CurCount);
+
+			if (Result != HAPI_RESULT_SUCCESS)
+				break;
+		}
+	}
+	else
+	{
+		Result = FHoudiniApi::SetFaceCounts(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId, InPartId, InFaceCounts.GetData(), 0, InFaceCounts.Num());
+	}
+
+	return Result;
+}
+
+HAPI_Result
+FHoudiniEngineUtils::HapiSetAttributeStringData(
 	const FString& InString,
 	const HAPI_NodeId& InNodeId,
 	const HAPI_PartId& InPartId,
@@ -3106,11 +3358,11 @@ FHoudiniEngineUtils::SetAttributeStringData(
 	TArray<FString> StringArray;
 	StringArray.Add(InString);
 
-	return SetAttributeStringData(StringArray, InNodeId, InPartId, InAttributeName, InAttributeInfo);
+	return HapiSetAttributeStringData(StringArray, InNodeId, InPartId, InAttributeName, InAttributeInfo);
 }
 
 HAPI_Result
-FHoudiniEngineUtils::SetAttributeStringData(
+FHoudiniEngineUtils::HapiSetAttributeStringData(
 	const TArray<FString>& InStringArray, 
 	const HAPI_NodeId& InNodeId,
 	const HAPI_PartId& InPartId,
@@ -3124,16 +3376,41 @@ FHoudiniEngineUtils::SetAttributeStringData(
 		StringDataArray.Add(FHoudiniEngineUtils::ExtractRawString(CurrentString));
 	}
 
-	// Set the attribute's string data
-	HAPI_Result result = FHoudiniApi::SetAttributeStringData(
-		FHoudiniEngine::Get().GetSession(), InNodeId, InPartId,
-		TCHAR_TO_ANSI(*InAttributeName), &InAttributeInfo,
-		StringDataArray.GetData(), 0, InAttributeInfo.count);
+	// Send strings in smaller chunks due to their potential size	
+	int32 ChunkSize = (THRIFT_MAX_CHUNKSIZE / 100) / InAttributeInfo.tupleSize;
+
+	HAPI_Result Result = HAPI_RESULT_FAILURE;
+	if (InAttributeInfo.count > ChunkSize)
+	{
+		// Set the attributes in chunks
+		for (int32 ChunkStart = 0; ChunkStart < InAttributeInfo.count; ChunkStart += ChunkSize)
+		{
+			int32 CurCount = InAttributeInfo.count - ChunkStart > ChunkSize ? ChunkSize : InAttributeInfo.count - ChunkStart;
+
+			Result = FHoudiniApi::SetAttributeStringData(
+				FHoudiniEngine::Get().GetSession(),
+				InNodeId, InPartId, TCHAR_TO_ANSI(*InAttributeName),
+				&InAttributeInfo, StringDataArray.GetData(),
+				ChunkStart, CurCount);
+
+			if (Result != HAPI_RESULT_SUCCESS)
+				break;
+		}
+	}
+	else
+	{
+		// Set all the attribute values once
+		Result = FHoudiniApi::SetAttributeStringData(
+			FHoudiniEngine::Get().GetSession(),
+			InNodeId, InPartId, TCHAR_TO_ANSI(*InAttributeName),
+			&InAttributeInfo, StringDataArray.GetData(),
+			0, InAttributeInfo.count);
+	}
 
 	// ExtractRawString allocates memory using malloc, free it!
 	FreeRawStringMemory(StringDataArray);
 
-	return result;
+	return Result;
 }
 
 char *
@@ -3293,7 +3570,10 @@ FHoudiniEngineUtils::HapiGetVertexListForGroup(
 	AllFaceList.Empty();
 	FirstValidPrim = 0;
 	FirstValidVertex = 0;
-	NewVertexList.Init(-1, FullVertexList.Num());
+
+	NewVertexList.SetNumUninitialized(FullVertexList.Num());
+	for(int32 n = 0; n < NewVertexList.Num(); n++)
+		NewVertexList[n] = -1;
 
 	// Get the faces membership for this group
 	bool bAllEquals = false;
@@ -3878,7 +4158,10 @@ FHoudiniEngineUtils::HapiGetAttributeDataAsStringFromInfo(
 
 	// Extract the StringHandles
 	TArray<HAPI_StringHandle> StringHandles;
-	StringHandles.Init(-1, Count * InAttributeInfo.tupleSize);
+	StringHandles.SetNumUninitialized(Count * InAttributeInfo.tupleSize);
+	for (int32 n = 0; n < StringHandles.Num(); n++)
+		StringHandles[n] = -1;
+
 	HOUDINI_CHECK_ERROR_RETURN(FHoudiniApi::GetAttributeStringData(
 		FHoudiniEngine::Get().GetSession(),
 		InGeoId, InPartId, InAttribName, 
@@ -4869,7 +5152,9 @@ FHoudiniEngineUtils::CreateGroupsFromTags(
 		{
 			// Set the group's Memberships
 			TArray<int> GroupArray;
-			GroupArray.Init(1, PartInfo.faceCount);
+			GroupArray.SetNumUninitialized(PartInfo.faceCount);
+			for (int32 n = 0; n < GroupArray.Num(); n++)
+				GroupArray[n] = 1;
 
 			if ( HAPI_RESULT_SUCCESS == FHoudiniApi::SetGroupMembership(
 				FHoudiniEngine::Get().GetSession(),
@@ -5250,17 +5535,24 @@ FHoudiniEngineUtils::GetGenericPropertiesAttributes(const HAPI_NodeId& InGeoNode
 
 bool
 FHoudiniEngineUtils::UpdateGenericPropertiesAttributes(UObject* InObject,
-	const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes)
+	const TArray<FHoudiniGenericAttribute>& InAllPropertyAttributes,
+	const bool bInDeferPostEditChangePropertyCalls,
+	const FHoudiniGenericAttribute::FFindPropertyFunctionType& InProcessFunction)
 {
 	if (!IsValid(InObject))
 		return false;
 
 	// Iterate over the found Property attributes
+	TArray<FHoudiniGenericAttributeChangedProperty> ChangedProperties;
+	if (bInDeferPostEditChangePropertyCalls)
+		ChangedProperties.Reserve(InAllPropertyAttributes.Num());
+	
 	int32 NumSuccess = 0;
 	for (const auto& CurrentPropAttribute : InAllPropertyAttributes)
 	{
 		// Update the current Property Attribute
-		if (!FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(InObject, CurrentPropAttribute))
+		constexpr int32 AtIndex = 0;
+		if (!FHoudiniGenericAttribute::UpdatePropertyAttributeOnObject(InObject, CurrentPropAttribute, AtIndex, bInDeferPostEditChangePropertyCalls, &ChangedProperties, InProcessFunction))
 			continue;
 
 		// Success!
@@ -5270,6 +5562,65 @@ FHoudiniEngineUtils::UpdateGenericPropertiesAttributes(UObject* InObject,
 		const FString ObjectName = InObject->GetName();
 		HOUDINI_LOG_MESSAGE(TEXT("Modified UProperty %s on %s named %s"), *CurrentPropAttribute.AttributeName, *ClassName, *ObjectName);
 #endif
+	}
+
+	// Handle call PostEditChangeProperty if we deferred the calls
+	if (bInDeferPostEditChangePropertyCalls && ChangedProperties.Num() > 0)
+	{
+		TMap<UObject*, bool> PostEditChangePropertyCalledPerObject;
+		for (FHoudiniGenericAttributeChangedProperty& ChangeData : ChangedProperties)
+		{
+			if (!ChangeData.Property || !IsValid(ChangeData.Object))
+				continue;
+
+			// Log that we are calling PostEditChangeProperty for the object / property chain
+			if (ChangeData.PropertyChain.Num() == 0)
+			{
+				HOUDINI_LOG_MESSAGE(
+					TEXT("Calling deferred PostEditChangeProperty for %s on %s named %s"),
+					*ChangeData.Property->GetName(),
+					*(ChangeData.Object->GetClass() ? ChangeData.Object->GetClass()->GetName() : TEXT("Object")),
+					*(ChangeData.Object->GetName()));
+			}
+			else if (ChangeData.PropertyChain.Num() > 0)
+			{
+				HOUDINI_LOG_MESSAGE(
+					TEXT("Calling deferred PostEditChangeProperty for %s on %s named %s"),
+					*FString::JoinBy(ChangeData.PropertyChain, TEXT("."), [](FProperty const* const Property)
+					{
+						if (!Property)
+							return FString();
+						return Property->GetName();
+					}),
+					*(ChangeData.Object->GetClass() ? ChangeData.Object->GetClass()->GetName() : TEXT("Object")),
+					*(ChangeData.Object->GetName()));
+			}
+
+			// Record if we successfully called PostEditChangeProperty at least once for each changed object
+			const bool bPostEditChangePropertyCalled = FHoudiniGenericAttribute::HandlePostEditChangeProperty(ChangeData.Object, ChangeData.PropertyChain, ChangeData.Property);
+			if (bPostEditChangePropertyCalled)
+				PostEditChangePropertyCalledPerObject.Add(ChangeData.Object, true);
+			else
+				PostEditChangePropertyCalledPerObject.FindOrAdd(ChangeData.Object, false);
+		}
+
+		// For each changed object where we did not call PostEditChangeProperty, call PostEditChange
+		for (const auto& Entry : PostEditChangePropertyCalledPerObject)
+		{
+			if (Entry.Value)
+				continue;
+			
+			UObject* const ChangedObject = Entry.Key;
+			if (!IsValid(ChangedObject))
+				continue;
+			
+			ChangedObject->PostEditChange();
+			AActor* const OwnerActor = Cast<AActor>(ChangedObject->GetOuter());
+			if (OwnerActor)
+			{
+				OwnerActor->PostEditChange();
+			}
+		}
 	}
 
 	return (NumSuccess > 0);
@@ -5424,7 +5775,7 @@ FHoudiniEngineUtils::SetGenericPropertyAttribute(
 
 		case EAttribStorageType::STRING:
 		{
-			if (HAPI_RESULT_SUCCESS != FHoudiniEngineUtils::SetAttributeStringData(
+			if (HAPI_RESULT_SUCCESS != FHoudiniEngineUtils::HapiSetAttributeStringData(
 				InPropertyAttribute.StringValues,
 				InGeoNodeId,
 				InPartId,
@@ -5813,6 +6164,54 @@ FHoudiniEngineUtils::GetLevelPathAttribute(
 }
 
 bool
+FHoudiniEngineUtils::GetLevelPathAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	FString& OutLevelPath,
+	const int32& InPointIndex,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<FString> StringData;
+
+	if (InPointIndex >= 0)
+	{
+		if (GetLevelPathAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_POINT, InPointIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutLevelPath = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (InPrimIndex >= 0)
+	{
+		if (GetLevelPathAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_PRIM, InPrimIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutLevelPath = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (GetLevelPathAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_DETAIL, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutLevelPath = StringData[0];
+			return true;
+		}
+	}
+	
+	OutLevelPath.Empty();
+	return false;
+}
+
+bool
 FHoudiniEngineUtils::GetOutputNameAttribute(
 	const HAPI_NodeId& InGeoId,
 	const HAPI_PartId& InPartId, 
@@ -5848,10 +6247,109 @@ FHoudiniEngineUtils::GetOutputNameAttribute(
 }
 
 bool
+FHoudiniEngineUtils::GetOutputNameAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	FString& OutOutputName,
+	const int32& InPointIndex,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<FString> StringData;
+
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+
+	// HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2
+	if (InPointIndex >= 0)
+	{
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, 
+			AttributeInfo, StringData, 1, HAPI_ATTROWNER_POINT, InPointIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutOutputName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (InPrimIndex >= 0)
+	{
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, 
+			AttributeInfo, StringData, 1, HAPI_ATTROWNER_PRIM, InPrimIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutOutputName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V2, 
+		AttributeInfo, StringData, 1, HAPI_ATTROWNER_DETAIL, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutOutputName = StringData[0];
+			return true;
+		}
+	}
+	
+	// HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1
+	if (InPointIndex >= 0)
+	{
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1, 
+			AttributeInfo, StringData, 1, HAPI_ATTROWNER_POINT, InPointIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutOutputName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (InPrimIndex >= 0)
+	{
+		if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+			InGeoId, InPartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1, 
+			AttributeInfo, StringData, 1, HAPI_ATTROWNER_PRIM, InPrimIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutOutputName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_CUSTOM_OUTPUT_NAME_V1, 
+		AttributeInfo, StringData, 1, HAPI_ATTROWNER_DETAIL, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutOutputName = StringData[0];
+			return true;
+		}
+	}
+
+	OutOutputName.Empty();
+	return false;
+}
+
+bool
 FHoudiniEngineUtils::GetBakeNameAttribute(
 	const HAPI_NodeId& InGeoId,
 	const HAPI_PartId& InPartId, 
 	TArray<FString>& OutBakeNames,
+	const HAPI_AttributeOwner& InAttribOwner,
 	const int32& InStartIndex,
 	const int32& InCount)
 {
@@ -5863,13 +6361,61 @@ FHoudiniEngineUtils::GetBakeNameAttribute(
 
 	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
 		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_BAKE_NAME, 
-		AttributeInfo, OutBakeNames, 1, HAPI_ATTROWNER_INVALID, InStartIndex, InCount))
+		AttributeInfo, OutBakeNames, 1, InAttribOwner, InStartIndex, InCount))
 	{
 		if (OutBakeNames.Num() > 0)
 			return true;
 	}
 
 	OutBakeNames.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeNameAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId, 
+	FString& OutBakeName,
+	const int32& InPointIndex,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<FString> StringData;
+
+	if (InPointIndex >= 0)
+	{
+		if (GetBakeNameAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_POINT, InPointIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (InPrimIndex >= 0)
+	{
+		if (GetBakeNameAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_PRIM, InPrimIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (GetBakeNameAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_DETAIL, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutBakeName = StringData[0];
+			return true;
+		}
+	}
+	
+	OutBakeName.Empty();
 	return false;
 }
 
@@ -5897,6 +6443,53 @@ FHoudiniEngineUtils::GetTileAttribute(
 	}
 
 	OutTileValues.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetTileAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	int32& OutTileValue,
+	const int32& InPointIndex,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<int32> IntData;
+
+	if (InPointIndex >= 0)
+	{
+		if (GetTileAttribute(InGeoId, InPartId, IntData, HAPI_ATTROWNER_POINT, InPointIndex, Count))
+		{
+			if (IntData.Num() > 0)
+			{
+				OutTileValue = IntData[0];
+				return true;
+			}
+		}
+	}
+
+	if (InPrimIndex >= 0)
+	{
+		if (GetTileAttribute(InGeoId, InPartId, IntData, HAPI_ATTROWNER_PRIM, InPrimIndex, Count))
+		{
+			if (IntData.Num() > 0)
+			{
+				OutTileValue = IntData[0];
+				return true;
+			}
+		}
+	}
+
+	if (GetTileAttribute(InGeoId, InPartId, IntData, HAPI_ATTROWNER_DETAIL, 0, Count))
+	{
+		if (IntData.Num() > 0)
+		{
+			OutTileValue = IntData[0];
+			return true;
+		}
+	}
+	
 	return false;
 }
 
@@ -5940,6 +6533,63 @@ bool FHoudiniEngineUtils::HasEditLayerName(const HAPI_NodeId& InGeoId, const HAP
 		InGeoId, InPartId,
 		HAPI_UNREAL_ATTRIB_LANDSCAPE_EDITLAYER_NAME,
 		InAttribOwner);
+}
+
+bool
+FHoudiniEngineUtils::GetTempFolderAttribute(
+	const HAPI_NodeId& InNodeId,
+	const HAPI_AttributeOwner& InAttributeOwner,
+	TArray<FString>& OutTempFolder,
+	const HAPI_PartId& InPartId,
+	const int32& InStart,
+	const int32& InCount)
+{
+	OutTempFolder.Empty();
+
+	HAPI_AttributeInfo TempFolderAttribInfo;
+	FHoudiniApi::AttributeInfo_Init(&TempFolderAttribInfo);
+	if (HapiGetAttributeDataAsString(
+		InNodeId, InPartId, HAPI_UNREAL_ATTRIB_TEMP_FOLDER,
+		TempFolderAttribInfo, OutTempFolder, 1, InAttributeOwner,
+		InStart, InCount))
+	{
+		if (OutTempFolder.Num() > 0)
+			return true;
+	}
+
+	OutTempFolder.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetTempFolderAttribute(
+	const HAPI_NodeId& InGeoId,
+	FString& OutTempFolder,
+	const HAPI_PartId& InPartId,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<FString> StringData;
+	if (GetTempFolderAttribute(InGeoId, HAPI_ATTROWNER_PRIM, StringData, InPartId, InPrimIndex, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutTempFolder = StringData[0];
+			return true;
+		}
+	}
+
+	if (GetTempFolderAttribute(InGeoId, HAPI_ATTROWNER_DETAIL, StringData, InPartId, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutTempFolder = StringData[0];
+			return true;
+		}
+	}
+	
+	OutTempFolder.Empty();
+	return false;
 }
 
 bool
@@ -5995,6 +6645,40 @@ FHoudiniEngineUtils::GetBakeFolderAttribute(
 }
 
 bool
+FHoudiniEngineUtils::GetBakeFolderAttribute(
+	const HAPI_NodeId& InGeoId,
+	FString& OutBakeFolder,
+	const HAPI_PartId& InPartId,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<FString> StringData;
+	if (InPrimIndex >= 0)
+	{
+		if (GetBakeFolderAttribute(InGeoId, HAPI_ATTROWNER_PRIM, StringData, InPartId, InPrimIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeFolder = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (GetBakeFolderAttribute(InGeoId, HAPI_ATTROWNER_DETAIL, StringData, InPartId, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutBakeFolder = StringData[0];
+			return true;
+		}
+	}
+	
+	OutBakeFolder.Empty();
+	return false;
+}
+
+bool
 FHoudiniEngineUtils::GetBakeActorAttribute(
 	const HAPI_NodeId& InGeoId,
 	const HAPI_PartId& InPartId,
@@ -6022,6 +6706,129 @@ FHoudiniEngineUtils::GetBakeActorAttribute(
 }
 
 bool
+FHoudiniEngineUtils::GetBakeActorAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	FString& OutBakeActorName,
+	const int32& InPointIndex,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<FString> StringData;
+
+	if (InPointIndex >= 0)
+	{
+		if (GetBakeActorAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_POINT, InPointIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeActorName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (InPrimIndex >= 0)
+	{
+		if (GetBakeActorAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_PRIM, InPrimIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeActorName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (GetBakeActorAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_DETAIL, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutBakeActorName = StringData[0];
+			return true;
+		}
+	}
+	
+	OutBakeActorName.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeActorClassAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	TArray<FString>& OutBakeActorClassNames,
+	const HAPI_AttributeOwner& InAttributeOwner,
+	const int32& InStart,
+	const int32& InCount)
+{
+	// ---------------------------------------------
+	// Attribute: unreal_bake_actor
+	// ---------------------------------------------
+	HAPI_AttributeInfo AttributeInfo;
+	FHoudiniApi::AttributeInfo_Init(&AttributeInfo);
+
+	if (FHoudiniEngineUtils::HapiGetAttributeDataAsString(
+		InGeoId, InPartId, HAPI_UNREAL_ATTRIB_BAKE_ACTOR_CLASS,
+		AttributeInfo, OutBakeActorClassNames, 1, InAttributeOwner, InStart, InCount))
+	{
+		if (OutBakeActorClassNames.Num() > 0)
+			return true;
+	}
+
+	OutBakeActorClassNames.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeActorClassAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	FString& OutBakeActorClassName,
+	const int32& InPointIndex,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<FString> StringData;
+
+	if (InPointIndex >= 0)
+	{
+		if (GetBakeActorClassAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_POINT, InPointIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeActorClassName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (InPrimIndex >= 0)
+	{
+		if (GetBakeActorClassAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_PRIM, InPrimIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeActorClassName = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (GetBakeActorClassAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_DETAIL, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutBakeActorClassName = StringData[0];
+			return true;
+		}
+	}
+	
+	OutBakeActorClassName.Empty();
+	return false;
+}
+
+bool
 FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(
 	const HAPI_NodeId& InGeoId,
 	const HAPI_PartId& InPartId,
@@ -6045,6 +6852,54 @@ FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(
 	}
 
 	OutBakeOutlinerFolders.Empty();
+	return false;
+}
+
+bool
+FHoudiniEngineUtils::GetBakeOutlinerFolderAttribute(
+	const HAPI_NodeId& InGeoId,
+	const HAPI_PartId& InPartId,
+	FString& OutBakeOutlinerFolder,
+	const int32& InPointIndex,
+	const int32& InPrimIndex)
+{
+	constexpr int32 Count = 1;
+	TArray<FString> StringData;
+
+	if (InPointIndex >= 0)
+	{
+		if (GetBakeOutlinerFolderAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_POINT, InPointIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeOutlinerFolder = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (InPrimIndex >= 0)
+	{
+		if (GetBakeOutlinerFolderAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_PRIM, InPrimIndex, Count))
+		{
+			if (StringData.Num() > 0)
+			{
+				OutBakeOutlinerFolder = StringData[0];
+				return true;
+			}
+		}
+	}
+
+	if (GetBakeOutlinerFolderAttribute(InGeoId, InPartId, StringData, HAPI_ATTROWNER_DETAIL, 0, Count))
+	{
+		if (StringData.Num() > 0)
+		{
+			OutBakeOutlinerFolder = StringData[0];
+			return true;
+		}
+	}
+	
+	OutBakeOutlinerFolder.Empty();
 	return false;
 }
 

@@ -110,6 +110,24 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 		// Outputting landscape as "editable layers" differs significantly from
 		// landscape outputs in "temp mode". To avoid a bigger spaghetti mess, we're
 		// dealing with modifying existing edit layers completely separately.
+
+		static bool OutputLandscape_ModifyLayers(
+			UHoudiniOutput* InOutput,
+			TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedActors,
+			TArray<ALandscapeProxy*>& InputLandscapesToUpdate,
+			const TArray<ALandscapeProxy*>& InAllInputLandscapes,
+			USceneComponent* SharedLandscapeActorParent,
+			const FString& DefaultLandscapeActorPrefix,
+			UWorld* World,
+			const TMap<FString, float>& LayerMinimums,
+			const TMap<FString, float>& LayerMaximums,
+			FHoudiniLandscapeExtent& LandscapeExtent,
+			FHoudiniLandscapeTileSizeInfo& LandscapeTileSizeInfo,
+			FHoudiniLandscapeReferenceLocation& LandscapeReferenceLocation,
+			FHoudiniPackageParams InPackageParams,
+			TSet<FString>& ClearedLayers,
+			TArray<UPackage*>& OutCreatedPackages);
+	
 		static bool OutputLandscape_ModifyLayer(
 			UHoudiniOutput* InOutput,
 			TArray<TWeakObjectPtr<AActor>>& CreatedUntrackedActors,
@@ -180,7 +198,6 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			ALandscape* InLandscape,
 			const TArray<FLandscapeImportLayerInfo>& LayerInfos,
 			TMap<FName, int32>& OutPaintLayers,
-			bool bNoWeightBlend,
 			bool bHasEditLayers,
 			const FName& LayerName
 			);
@@ -353,11 +370,28 @@ struct HOUDINIENGINE_API FHoudiniLandscapeTranslator
 			bool bDefaultNoWeightBlending,
 			const FHoudiniPackageParams& InTilePackageParams,
 			const FHoudiniPackageParams& InLayerPackageParams,
-			TArray<UPackage*>& OutCreatedPackages);
+			TArray<UPackage*>& OutCreatedPackages,
+			TMap<FName, const FHoudiniGeoPartObject*>& OutLayerObjectMapping
+			);
+
+		static void UpdateLayerProperties(
+			ALandscape* TargetLandscape,
+			const FLandscapeLayer* TargetLayer,
+			const FLandscapeImportLayerInfo& InLayerInfo,
+			const TMap<FName, const FHoudiniGeoPartObject*>& LayerObjectMapping
+			);
 
 		static bool GetNonWeightBlendedLayerNames(
 			const FHoudiniGeoPartObject& HeightfieldGeoPartObject,
 			TArray<FString>& NonWeightBlendedLayerNames);
+
+		static bool GetIsLayerSubtractive(
+			const FHoudiniGeoPartObject& HeightfieldGeoPartObject,
+			int& LayerCompositeMode);
+
+		static bool GetIsLayerWeightBlended(
+			const FHoudiniGeoPartObject& HeightfieldGeoPartObject,
+			bool& bIsLayerNoWeightBlended);
 
 		static bool IsUnitLandscapeLayer(
 			const FHoudiniGeoPartObject& LayerGeoPartObject);
@@ -474,7 +508,8 @@ public:
 			const FString& InLayerName,
 			const FString& InPackagePath,
 			const FString& InPackageName,
-			UPackage*& OutPackage);
+			UPackage*& OutPackage,
+			bool& bCreatedPackaged);
 
 		static bool EnableWorldComposition();
 
