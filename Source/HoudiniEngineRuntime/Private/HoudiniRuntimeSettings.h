@@ -31,6 +31,7 @@
 #include "Engine/EngineTypes.h"
 #include "Engine/AssetUserData.h"
 #include "PhysicsEngine/BodyInstance.h"
+#include "Engine/DeveloperSettings.h"
 
 #include "HoudiniRuntimeSettings.generated.h"
 
@@ -84,6 +85,17 @@ enum EHoudiniExecutableType
 
 	// Houdini Indie
 	HRSHE_HoudiniIndie UMETA(DisplayName = "Houdini Indie"),
+};
+
+UENUM()
+enum class EHoudiniRuntimeUserSettingUseCustomLocation : uint8
+{
+	/** Use the per-project plugin settings. */
+	HRUSUCL_Project UMETA(DisplayName = "Use The Per-Project Plugin Settings"),
+	/** Do not use a custom location at all */
+	HRUSUCL_Disabled UMETA(DisplayName = "Do Not Use Custom Location"),
+	/** Use the custom location defined here in editor preferences. */
+	HRUSUCL_Enabled UMETA(DisplayName = "Use Custom Location"),
 };
 
 USTRUCT(BlueprintType)
@@ -490,11 +502,11 @@ protected:
 		// Custom Houdini Location
 		//-------------------------------------------------------------------------------------------------------------
 		// Whether to use custom Houdini location.
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniLocation, Meta = (DisplayName = "Use custom Houdini location (requires restart)"))
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniLocation, Meta = (DisplayName = "Use custom Houdini location (requires restart)", ConfigRestartRequired=true))
 		bool bUseCustomHoudiniLocation;
 
 		// Custom Houdini location (where HAPI library is located).
-		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniLocation, Meta = (DisplayName = "Custom Houdini location"))
+		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniLocation, Meta = (EditCondition = "bUseCustomHoudiniLocation", DisplayName = "Custom Houdini location", ConfigRestartRequired=true))
 		FDirectoryPath CustomHoudiniLocation;
 
 		// Select the Houdini executable to be used when opening session sync or opening hip files
@@ -527,4 +539,35 @@ protected:
 		// Sets HOUDINI_AUDIO_DSO_PATH
 		UPROPERTY(GlobalConfig, EditAnywhere, Category = HoudiniEngineInitialization)
 		FString AudioDsoSearchPath;
+};
+
+
+
+UCLASS(config=EditorPerProjectUserSettings)
+class HOUDINIENGINERUNTIME_API UHoudiniRuntimeUserSettings : public UDeveloperSettings
+{
+	GENERATED_BODY()
+
+public:
+	UHoudiniRuntimeUserSettings();
+
+#if WITH_EDITOR
+	//~ UDeveloperSettings interface
+	virtual FText GetSectionText() const override;
+#endif
+
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent & PropertyChangedEvent) override;
+#endif
+
+	//-------------------------------------------------------------------------------------------------------------
+	// Custom Houdini Location
+	//-------------------------------------------------------------------------------------------------------------
+	// Whether to use custom Houdini location from the project plugin settings, the editor setting, or do not use a custom location.
+	UPROPERTY(config, EditAnywhere, Category = HoudiniLocation, Meta = (DisplayName = "Use custom Houdini location (requires restart)", ConfigRestartRequired=true))
+	EHoudiniRuntimeUserSettingUseCustomLocation UseCustomHoudiniLocation;
+	
+	// Custom Houdini location (where HAPI library is located).
+	UPROPERTY(config, EditAnywhere, Category = HoudiniLocation, Meta = (EditCondition = "UseCustomHoudiniLocation == EHoudiniRuntimeUserSettingUseCustomLocation::HRUSUCL_Enabled", DisplayName = "Custom Houdini location", ConfigRestartRequired=true))
+	FDirectoryPath CustomHoudiniLocation;
 };

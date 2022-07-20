@@ -1299,12 +1299,29 @@ FHoudiniEngineUtils::LoadLibHAPI(FString & StoredLibHAPILocation)
 
 	// If we have a custom location specified through settings, attempt to use that.
 	bool bCustomPathFound = false;
-	const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
-	if (HoudiniRuntimeSettings && HoudiniRuntimeSettings->bUseCustomHoudiniLocation)
 	{
-		// Create full path to libHAPI binary.
-		FString CustomHoudiniLocationPath = HoudiniRuntimeSettings->CustomHoudiniLocation.Path;
-		if (!CustomHoudiniLocationPath.IsEmpty())
+		const UHoudiniRuntimeSettings * HoudiniRuntimeSettings = GetDefault< UHoudiniRuntimeSettings >();
+		const UHoudiniRuntimeUserSettings * HoudiniRuntimeUserSettings = GetDefault< UHoudiniRuntimeUserSettings >();
+
+		bool bUseCustomPath = false;
+		FString CustomHoudiniLocationPath;
+
+		// The user can set a per-editor setting in UHoudiniRuntimeUserSettings to determine if
+		// the custom location should be disabled, read from the editor settings or read from the per-project
+		// settings.
+		if (HoudiniRuntimeUserSettings && HoudiniRuntimeUserSettings->UseCustomHoudiniLocation == EHoudiniRuntimeUserSettingUseCustomLocation::HRUSUCL_Enabled)
+		{
+			bUseCustomPath = true;
+			CustomHoudiniLocationPath = HoudiniRuntimeUserSettings->CustomHoudiniLocation.Path;
+		}
+		else if (HoudiniRuntimeUserSettings && HoudiniRuntimeUserSettings->UseCustomHoudiniLocation == EHoudiniRuntimeUserSettingUseCustomLocation::HRUSUCL_Project &&
+			HoudiniRuntimeSettings && HoudiniRuntimeSettings->bUseCustomHoudiniLocation)
+		{
+			bUseCustomPath = true;
+			CustomHoudiniLocationPath = HoudiniRuntimeSettings->CustomHoudiniLocation.Path;
+		}
+
+		if (bUseCustomPath && !CustomHoudiniLocationPath.IsEmpty())
 		{
 			// Convert path to absolute if it is relative.
 			if (FPaths::IsRelative(CustomHoudiniLocationPath))

@@ -262,12 +262,31 @@ UHoudiniRuntimeSettings::PostInitProperties()
 	UpdateSessionUI();
 
 #endif // WITH_EDITOR
-
-	SetPropertyReadOnly(TEXT("CustomHoudiniLocation"), !bUseCustomHoudiniLocation);
 }
 
 
 #if WITH_EDITOR
+bool
+CheckCustomHoudiniLocation(const FString& InCustomHoudiniLocationPath)
+{
+	const FString LibHAPIName = FHoudiniEngineRuntimeUtils::GetLibHAPIName();
+	const FString LibHAPICustomPath = FString::Printf(TEXT("%s/%s"), *InCustomHoudiniLocationPath, *LibHAPIName);
+
+	// If path does not point to libHAPI location, we need to let user know.
+	if (!FPaths::FileExists(LibHAPICustomPath))
+	{
+		FString MessageString = FString::Printf(
+			TEXT("%s was not found in %s"), *LibHAPIName, *InCustomHoudiniLocationPath);
+
+		FPlatformMisc::MessageBoxExt(
+			EAppMsgType::Ok, *MessageString,
+			TEXT("Invalid Custom Location Specified, resetting."));
+
+		return false;
+	}
+
+	return true;
+}
 
 void
 UHoudiniRuntimeSettings::PostEditChangeProperty(struct FPropertyChangedEvent & PropertyChangedEvent)
@@ -281,26 +300,10 @@ UHoudiniRuntimeSettings::PostEditChangeProperty(struct FPropertyChangedEvent & P
 		return;
 	if (Property->GetName() == TEXT("SessionType"))
 		UpdateSessionUI();
-	else if (Property->GetName() == TEXT("bUseCustomHoudiniLocation"))
-		SetPropertyReadOnly(TEXT("CustomHoudiniLocation"), !bUseCustomHoudiniLocation);
 	else if (Property->GetName() == TEXT("CustomHoudiniLocation"))
 	{
-		FString LibHAPIName = FHoudiniEngineRuntimeUtils::GetLibHAPIName();
-		FString & CustomHoudiniLocationPath = CustomHoudiniLocation.Path;
-		FString LibHAPICustomPath = FString::Printf(TEXT("%s/%s"), *CustomHoudiniLocationPath, *LibHAPIName);
-
-		// If path does not point to libHAPI location, we need to let user know.
-		if (!FPaths::FileExists(LibHAPICustomPath))
-		{
-			FString MessageString = FString::Printf(
-				TEXT("%s was not found in %s"), *LibHAPIName, *CustomHoudiniLocationPath);
-
-			FPlatformMisc::MessageBoxExt(
-				EAppMsgType::Ok, *MessageString,
-				TEXT("Invalid Custom Location Specified, resetting."));
-
-			CustomHoudiniLocationPath = TEXT("");
-		}
+		if (!CheckCustomHoudiniLocation(CustomHoudiniLocation.Path))
+			CustomHoudiniLocation.Path = TEXT("");
 	}
 	else if (Property->GetName() == TEXT("MarshallingLandscapesForceMinMaxValues"))
 	{
@@ -407,5 +410,42 @@ UHoudiniRuntimeSettings::UpdateSessionUI()
 }
 
 #endif // WITH_EDITOR
+
+UHoudiniRuntimeUserSettings::UHoudiniRuntimeUserSettings()
+{
+	CategoryName = TEXT("Plugins");
+	SectionName = TEXT("Houdini Engine");
+
+	// Custom Houdini location.
+	UseCustomHoudiniLocation = EHoudiniRuntimeUserSettingUseCustomLocation::HRUSUCL_Project;
+	CustomHoudiniLocation.Path = TEXT("");
+}
+
+#if WITH_EDITOR
+FText UHoudiniRuntimeUserSettings::GetSectionText() const
+{
+	return LOCTEXT("UserSettingsDisplayName", "Houdini Engine");
+}
+
+#endif	// WITH_EDITOR
+
+#if WITH_EDITOR
+void
+UHoudiniRuntimeUserSettings::PostEditChangeProperty(FPropertyChangedEvent & PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+
+	FProperty const* const Property = PropertyChangedEvent.MemberProperty;
+
+	if (!Property)
+		return;
+	if (Property->GetName() == TEXT("CustomHoudiniLocation"))
+	{
+		if (!CheckCustomHoudiniLocation(CustomHoudiniLocation.Path))
+			CustomHoudiniLocation.Path = TEXT("");
+	}
+}
+
+#endif	// WITH_EDITOR
 
 #undef LOCTEXT_NAMESPACE
